@@ -16,10 +16,12 @@ def start_scraper():
     thread = threading.Thread(target=_start_scraper, daemon=True, name="scraper")
     thread.start()
 
-async def _scrape(session: aiohttp.ClientSession) -> None:
-    async with session.get(API_URL) as resp:
+async def _scrape(session: aiohttp.ClientSession, last_time: str) -> str:
+    async with session.get(API_URL, params={"t": last_time}) as resp:
         resp.raise_for_status()
-        write_data(await resp.json())
+        data = await resp.json()
+        write_data(data)
+        return data["lastTime"]["time"]
 
 
 def write_data(data: dict[str, Any], database_connection: duckdb.DuckDBPyConnection = None):
@@ -39,7 +41,7 @@ def write_data(data: dict[str, Any], database_connection: duckdb.DuckDBPyConnect
             SELECT DISTINCT * FROM _df d
             WHERE NOT EXISTS (
                 SELECT 1 FROM {TABLE_NAME} v
-                WHERE v.id = d.id AND v.api_timestamp = d.api_timestamp
+                WHERE v.id = d.id AND v.lat = d.lat AND v.lon = d.lon
             )
         """)
     finally:
@@ -48,10 +50,11 @@ def write_data(data: dict[str, Any], database_connection: duckdb.DuckDBPyConnect
 
 
 async def _scraper_loop() -> None:
+    last_time = "0"
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                await _scrape(session)
+                last_time = await _scrape(session, last_time)
                 logger.info("Scraped successfully")
             except Exception as exc:
                 logger.error("Scrape failed: %s", exc)

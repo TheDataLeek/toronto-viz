@@ -72,10 +72,9 @@ def test_cross_run_same_timestamp_not_reinserted(conn):
     assert _row_count(conn) == 1
 
 
-def test_cross_run_new_timestamp_is_inserted(conn):
-    vehicle = _make_vehicle("1")
-    vizlib.scraper.write_data(_make_payload([vehicle], timestamp=1_700_000_000_000), database_connection=conn)
-    vizlib.scraper.write_data(_make_payload([vehicle], timestamp=1_700_000_060_000), database_connection=conn)
+def test_cross_run_new_position_is_inserted(conn):
+    vizlib.scraper.write_data(_make_payload([_make_vehicle("1", lat="43.65", lon="-79.38")]), database_connection=conn)
+    vizlib.scraper.write_data(_make_payload([_make_vehicle("1", lat="43.66", lon="-79.39")]), database_connection=conn)
     assert _row_count(conn) == 2
 
 
