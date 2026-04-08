@@ -2,6 +2,7 @@ import logging
 
 from loguru import logger
 
+
 class _InterceptHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -24,9 +25,8 @@ class _TLSNoiseFilter(logging.Filter):
 
 def _configure_logging() -> None:
     logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
-    werkzeug_log = logging.getLogger("werkzeug")
-    werkzeug_log.handlers = [_InterceptHandler()]
-    werkzeug_log.propagate = False  # prevent double-logging via root handler
-    werkzeug_log.addFilter(_TLSNoiseFilter())
-
-
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        log = logging.getLogger(name)
+        log.handlers = [_InterceptHandler()]
+        log.propagate = False
+        log.addFilter(_TLSNoiseFilter())

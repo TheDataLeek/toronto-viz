@@ -1,21 +1,21 @@
 import duckdb
-import flask
+from fastapi import FastAPI
 
 from . import DB_FILE
 from .server_utils import _configure_logging
 
 
-app = flask.Flask("backend")
+app = FastAPI()
 _configure_logging()
 
 
 @app.get("/")
-async def index() -> flask.Response:
-    return flask.jsonify({"status": "ok"})
+async def index():
+    return {"status": "ok"}
 
 
 @app.get("/api/data")
-async def api_data() -> flask.Response:
+async def api_data():
     with duckdb.connect(str(DB_FILE), read_only=True) as conn:
         try:
             rows = conn.execute(
@@ -27,12 +27,12 @@ async def api_data() -> flask.Response:
                 """
             ).pl()
         except duckdb.CatalogException:
-            return flask.jsonify([])
-    return flask.jsonify(rows.to_dicts())
+            return []
+    return rows.to_dicts()
 
 
-@app.get("/api/ttc/<route_id>")
-async def api_route(route_id: str) -> flask.Response:
+@app.get("/api/ttc/{route_id}")
+async def api_route(route_id: str):
     with duckdb.connect(str(DB_FILE), read_only=True) as conn:
         try:
             rows = conn.execute(
@@ -46,5 +46,5 @@ async def api_route(route_id: str) -> flask.Response:
                 [route_id],
             ).pl()
         except duckdb.CatalogException:
-            return flask.jsonify([])
-    return flask.jsonify(rows.to_dicts())
+            return []
+    return rows.to_dicts()

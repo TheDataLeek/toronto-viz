@@ -5,6 +5,7 @@ import subprocess
 import re
 import sys
 
+import uvicorn
 import requests
 import cyclopts
 
@@ -17,11 +18,9 @@ cli = cyclopts.App()
 
 
 @cli.default
-def main(*, host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
+def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> None:
     start_scraper()
-    # use_reloader=False is required — the reloader forks the process, which
-    # would double-start the scraper thread
-    app.run(host=host, port=port, debug=debug, use_reloader=False)
+    uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload)
 
 
 @cli.command()
