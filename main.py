@@ -3,6 +3,7 @@
 import json
 import subprocess
 import re
+import sys
 
 import requests
 import cyclopts
@@ -31,7 +32,7 @@ def fetch_sample():
 
 
 @cli.command()
-def pingscan() -> None:
+def pingscan(*, ip_only: bool = False) -> None:
     """Scan local network and find the Raspberry Pi."""
 
     # 1. Discover local subnet via `ip route`
@@ -44,19 +45,23 @@ def pingscan() -> None:
             break
 
     if not subnet:
-        print("Could not determine local subnet from ip route")
-        return
+        if not ip_only:
+            print("Could not determine local subnet from ip route")
+        sys.exit(1)
 
-    print(f"Scanning {subnet} ...")
+    if not ip_only:
+        print(f"Scanning {subnet} ...")
 
     # 2. Ping scan with nmap
     scan = subprocess.run(["nmap", "-sn", subnet], capture_output=True, text=True)
 
     if scan.returncode != 0:
-        print("nmap not found or failed. Install with: sudo apt install nmap")
-        return
+        if not ip_only:
+            print("nmap not found or failed. Install with: sudo apt install nmap")
+        sys.exit(1)
 
-    print(scan.stdout)
+    if not ip_only:
+        print(scan.stdout)
 
     # 3. Highlight Pi candidates
     lines = scan.stdout.splitlines()
@@ -67,15 +72,22 @@ def pingscan() -> None:
         if line.startswith("Nmap scan report for"):
             current_host = line.removeprefix("Nmap scan report for ").strip()
         for candidate in candidate_strings:
-            if (candidate in line) and current_host:
+            if (candidate in line.lower()) and current_host:
                 pi_hosts.append(current_host)
 
     if pi_hosts:
-        print("=== Raspberry Pi candidates ===")
-        for h in pi_hosts:
-            print(f"  {h}")
+        if ip_only:
+            host = pi_hosts[0]
+            m = re.search(r'\((\d+\.\d+\.\d+\.\d+)\)', host)
+            print(m.group(1) if m else host)
+        else:
+            print("=== Raspberry Pi candidates ===")
+            for h in pi_hosts:
+                print(f"  {h}")
     else:
-        print("No Raspberry Pi MAC vendor match found — check hostnames above.")
+        if not ip_only:
+            print("No Raspberry Pi MAC vendor match found — check hostnames above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
