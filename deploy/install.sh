@@ -19,7 +19,7 @@ if [ -d "$INSTALL_DIR/.git" ]; then
 else
     echo "Cloning repo to $INSTALL_DIR..."
     sudo git clone "$REPO" "$INSTALL_DIR"
-    sudo chown -R pi:pi "$INSTALL_DIR"
+    sudo chown -R zoe:zoe "$INSTALL_DIR"
 fi
 
 # Sync production dependencies
