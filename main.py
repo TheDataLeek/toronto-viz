@@ -20,7 +20,7 @@ cli = cyclopts.App()
 @cli.default
 def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> None:
     start_scraper()
-    uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload)
+    uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload, server_header=False)
 
 
 @cli.command()

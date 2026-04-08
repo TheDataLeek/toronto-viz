@@ -17,6 +17,7 @@ dependencies = [
     "polars[pyarrow]>=1.39.3",
     "pyarrow>=23.0.1",
     "requests>=2.33.1",
+    "slowapi>=0.1.9",
     "uvicorn>=0.44.0",
 ]
 

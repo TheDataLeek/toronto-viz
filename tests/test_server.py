@@ -84,6 +84,11 @@ def test_api_route_filters_by_route(client):
 
 
 def test_api_route_unknown_returns_empty(client):
-    resp = client.get("/api/ttc/__nonexistent_route__")
+    resp = client.get("/api/ttc/9999")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_api_route_invalid_format_returns_422(client):
+    resp = client.get("/api/ttc/__bad__")
+    assert resp.status_code == 422
