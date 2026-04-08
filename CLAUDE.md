@@ -34,4 +34,4 @@ This is a TTC (Toronto Transit Commission) vehicle location tracker. It scrapes 
 
 **Tests** (`tests/test_scraper.py`) use in-memory DuckDB via the `database_connection` parameter on `write_data()`. `test_db_write` requires `data/sample_data.json` (generate with `just fetch-sample`).
 
-**Deployment** — Raspberry Pi running systemd service at `/opt/toronto-viz`. `deploy/install.sh` is an idempotent bootstrap that clones/pulls the repo and installs the service. Flask is started with `--host 0.0.0.0` in production.
+**Deployment** — Raspberry Pi running systemd service at `/opt/toronto-viz`. `deploy/install.py` is a standalone uv script (PEP 723 inline deps) that bootstraps or updates the install idempotently: clones/pulls the repo, syncs deps, and installs the service. Run via `sudo uv run deploy/install.py` or `just install` on the Pi. The service itself executes `deploy/run.sh`, which pulls latest code and resyncs deps on every start before exec-ing the app. Flask is started with `--host 0.0.0.0` in production.

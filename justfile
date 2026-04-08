@@ -21,7 +21,7 @@ serve:
 
 # Bootstrap or update the systemd service on the Raspberry Pi (run on Pi)
 install:
-    bash deploy/install.sh
+    sudo uv run deploy/install.py
 
 # Tail live journald logs for the toronto-viz service
 logs:
@@ -37,4 +37,4 @@ deploy:
     set -euo pipefail
     IP=$(uv run python ./main.py pingscan --ip-only)
     echo "Deploying to zoe@$IP ..."
-    ssh zoe@"$IP" "cd /opt/toronto-viz && sudo bash deploy/install.sh"
+    ssh zoe@"$IP" "cd /opt/toronto-viz && sudo uv run deploy/install.py"
