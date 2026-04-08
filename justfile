@@ -19,12 +19,9 @@ test target='tests/':
 serve:
     uv run python ./main.py
 
-# Install and start the systemd service on the Raspberry Pi
+# Bootstrap or update the systemd service on the Raspberry Pi (run on Pi)
 install:
-    sudo cp deploy/toronto-viz.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable toronto-viz
-    sudo systemctl restart toronto-viz
+    bash deploy/install.sh
 
 # Tail live journald logs for the toronto-viz service
 logs:
