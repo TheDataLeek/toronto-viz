@@ -1,0 +1,43 @@
+import logging
+
+import duckdb
+import flask
+import polars as pl
+from loguru import logger
+
+from . import DB_FILE
+
+
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
+    for name in ("werkzeug",):
+        logging.getLogger(name).handlers = [_InterceptHandler()]
+
+
+app = flask.Flask("backend")
+_configure_logging()
+
+
+@app.get("/")
+async def index() -> flask.Response:
+    return flask.jsonify({"status": "ok"})
+
+
+@app.get("/api/data")
+async def api_data() -> flask.Response:
+    with duckdb.connect(str(DB_FILE), read_only=True) as conn:
+        rows = conn.execute("SELECT * FROM vehicles").pl()
+    return flask.jsonify(rows.to_dicts())
