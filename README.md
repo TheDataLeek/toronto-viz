@@ -28,18 +28,26 @@ The `tests/test_scraper.py` suite uses in-memory DuckDB. `test_db_write` require
 
 ## Raspberry Pi deployment
 
-On the Pi, run the bootstrap installer once:
+### First-time setup
+
+SSH into the Pi and run the bootstrap installer:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/TheDataLeek/toronto-viz/main/deploy/install.sh | bash
+curl -LsSf https://raw.githubusercontent.com/TheDataLeek/toronto-viz/main/deploy/install.py | sudo uv run -
 ```
 
-This clones the repo to `/opt/toronto-viz`, installs the systemd service, and starts it. The script is idempotent — re-run it to pull updates.
-
-To deploy changes from your dev machine:
+Or clone the repo manually and run:
 
 ```sh
-just install        # copy service file, reload systemd, restart
+sudo uv run deploy/install.py
+```
+
+This clones the repo to `/opt/toronto-viz`, installs the systemd service as the calling user, and starts it. On every subsequent service start, `deploy/run.sh` automatically pulls the latest code and resyncs dependencies before launching the app — so the service is always self-updating.
+
+### Deploying from your dev machine
+
+```sh
+just deploy         # pingscan for Pi IP, then SSH + run installer
 just logs           # tail journald logs
 ```
 
