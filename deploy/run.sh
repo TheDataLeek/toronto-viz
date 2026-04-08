@@ -2,7 +2,7 @@
 set -euo pipefail
 
 INSTALL_DIR="/opt/toronto-viz"
-UV_BIN="$HOME/.local/bin/uv"
+export PATH="/usr/local/bin:$HOME/.local/bin:$PATH"
 
 cd "$INSTALL_DIR"
 
@@ -10,7 +10,7 @@ cd "$INSTALL_DIR"
 git pull --ff-only
 
 # Sync production dependencies
-"$UV_BIN" sync --no-dev --project "$INSTALL_DIR"
+uv sync --no-dev --project "$INSTALL_DIR"
 
 # Hand off to the app
-exec "$UV_BIN" run python "$INSTALL_DIR/main.py" --host 0.0.0.0 --port 5000
+exec uv run python "$INSTALL_DIR/main.py" --host 0.0.0.0 --port 5000

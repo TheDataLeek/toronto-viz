@@ -4,7 +4,9 @@ set -euo pipefail
 REPO="https://github.com/TheDataLeek/toronto-viz.git"
 INSTALL_DIR="/opt/toronto-viz"
 SERVICE_NAME="toronto-viz"
-SERVICE_USER=$(whoami)
+# If invoked via sudo, SUDO_USER is the real caller; fall back to whoami
+SERVICE_USER=${SUDO_USER:-$(whoami)}
+SERVICE_HOME=$(getent passwd "$SERVICE_USER" | cut -d: -f6)
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
@@ -12,24 +14,29 @@ log "Starting toronto-viz install"
 log "  repo:    $REPO"
 log "  target:  $INSTALL_DIR"
 log "  service: $SERVICE_NAME"
-log "  user:    $SERVICE_USER"
+log "  user:    $SERVICE_USER (home: $SERVICE_HOME)"
 
-# Install uv if not present
+# Install uv — system-wide when running as root so the service user can find it,
+# otherwise per-user into ~/.local/bin
 if ! command -v uv &>/dev/null; then
     log "uv not found — installing..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+    if [ "$(id -u)" = "0" ]; then
+        curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+    else
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.local/bin:$PATH"
+    fi
     log "uv installed: $(uv --version)"
 else
     log "uv already installed: $(uv --version)"
 fi
 
-# Clone or update the repo
+# Clone or update the repo as the service user so it owns the files
 if [ -d "$INSTALL_DIR/.git" ]; then
     log "Repo exists — pulling latest..."
-    BEFORE=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
-    git -C "$INSTALL_DIR" pull --ff-only
-    AFTER=$(git -C "$INSTALL_DIR" rev-parse --short HEAD)
+    BEFORE=$(sudo -u "$SERVICE_USER" git -C "$INSTALL_DIR" rev-parse --short HEAD)
+    sudo -u "$SERVICE_USER" git -C "$INSTALL_DIR" pull --ff-only
+    AFTER=$(sudo -u "$SERVICE_USER" git -C "$INSTALL_DIR" rev-parse --short HEAD)
     if [ "$BEFORE" = "$AFTER" ]; then
         log "Already up to date ($AFTER)"
     else
@@ -37,29 +44,28 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     fi
 else
     log "Cloning repo to $INSTALL_DIR..."
-    sudo mkdir -p "$INSTALL_DIR"
-    sudo chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-    git clone "$REPO" "$INSTALL_DIR"
-    log "Cloned at $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
+    mkdir -p "$INSTALL_DIR"
+    chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+    sudo -u "$SERVICE_USER" git clone "$REPO" "$INSTALL_DIR"
+    log "Cloned at $(sudo -u "$SERVICE_USER" git -C "$INSTALL_DIR" rev-parse --short HEAD)"
 fi
 
-# Ensure run.sh is executable
 chmod +x "$INSTALL_DIR/deploy/run.sh"
 
-# Sync production dependencies
+# Sync production dependencies as the service user
 log "Syncing dependencies (no-dev)..."
-uv sync --no-dev --project "$INSTALL_DIR"
+sudo -u "$SERVICE_USER" uv sync --no-dev --project "$INSTALL_DIR"
 log "Dependencies synced"
 
-# Install the service unit with the correct user substituted in
+# Write the service unit with the real username substituted in
 log "Installing systemd service unit (User=$SERVICE_USER)..."
 sed "s/__SERVICE_USER__/$SERVICE_USER/" "$INSTALL_DIR/deploy/$SERVICE_NAME.service" \
-    | sudo tee "/etc/systemd/system/$SERVICE_NAME.service" > /dev/null
-sudo systemctl daemon-reload
+    | tee "/etc/systemd/system/$SERVICE_NAME.service" > /dev/null
+systemctl daemon-reload
 log "Enabling $SERVICE_NAME..."
-sudo systemctl enable "$SERVICE_NAME"
+systemctl enable "$SERVICE_NAME"
 log "Restarting $SERVICE_NAME..."
-sudo systemctl restart "$SERVICE_NAME"
+systemctl restart "$SERVICE_NAME"
 
 log "Install complete. Service status:"
 systemctl status "$SERVICE_NAME" --no-pager
