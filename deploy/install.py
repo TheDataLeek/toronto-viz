@@ -113,19 +113,6 @@ def install_service(user: str) -> None:
     logger.info("Restarting {} ...", SERVICE_NAME)
     run("systemctl", "restart", SERVICE_NAME)
 
-    enable_funnel()
-
-
-def enable_funnel() -> None:
-    if not shutil.which("tailscale"):
-        logger.warning("tailscale not found — skipping funnel setup")
-        logger.warning("  Install tailscale, then run: sudo tailscale funnel 5000")
-        return
-
-    logger.info("Enabling Tailscale Funnel on port 5000...")
-    run("tailscale", "funnel", "5000")
-    logger.info("Funnel enabled — service is publicly accessible via Tailscale")
-
 
 def run(*cmd: str, as_user: str | None = None, check: bool = True) -> subprocess.CompletedProcess:
     full = ["sudo", "-u", as_user, *cmd] if as_user else list(cmd)
