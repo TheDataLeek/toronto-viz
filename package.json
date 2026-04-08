@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "build": "esbuild src/index.js --bundle --minify --outfile=dist/bundle.js",
+    "build": "esbuild src/index.js --bundle --minify --format=esm --outfile=dist/bundle.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
