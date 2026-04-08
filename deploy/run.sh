@@ -12,5 +12,5 @@ git pull --ff-only
 # Sync production dependencies
 uv sync --no-dev --project "$INSTALL_DIR"
 
-# Hand off to the app
-exec uv run python "$INSTALL_DIR/main.py" --host 0.0.0.0 --port 5000
+# Hand off to gunicorn
+exec uv run gunicorn --config "$INSTALL_DIR/deploy/gunicorn.conf.py" "vizlib.server:app"

@@ -2,7 +2,6 @@ import logging
 
 import duckdb
 import flask
-import polars as pl
 from loguru import logger
 
 from . import DB_FILE
@@ -21,10 +20,19 @@ class _InterceptHandler(logging.Handler):
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
+class _TLSNoiseFilter(logging.Filter):
+    """Drop 'Bad request version' 400s — HTTPS clients hitting the HTTP server."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Bad request version" not in record.getMessage()
+
+
 def _configure_logging() -> None:
     logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
-    for name in ("werkzeug",):
-        logging.getLogger(name).handlers = [_InterceptHandler()]
+    werkzeug_log = logging.getLogger("werkzeug")
+    werkzeug_log.handlers = [_InterceptHandler()]
+    werkzeug_log.propagate = False  # prevent double-logging via root handler
+    werkzeug_log.addFilter(_TLSNoiseFilter())
 
 
 app = flask.Flask("backend")
@@ -39,5 +47,9 @@ async def index() -> flask.Response:
 @app.get("/api/data")
 async def api_data() -> flask.Response:
     with duckdb.connect(str(DB_FILE), read_only=True) as conn:
-        rows = conn.execute("SELECT * FROM vehicles").pl()
+        try:
+            rows = conn.execute("SELECT * FROM vehicles").pl()
+        except duckdb.CatalogException:
+            # Table doesn't exist yet — scraper hasn't completed its first run
+            return flask.jsonify([])
     return flask.jsonify(rows.to_dicts())
