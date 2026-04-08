@@ -1,0 +1,30 @@
+{
+  "name": "toronto-viz",
+  "version": "1.0.0",
+  "description": "Scrapes TTC vehicle locations every 60 seconds and serves them via a Flask API. Designed to run on a Raspberry Pi as a systemd service.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --minify --outfile=dist/bundle.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheDataLeek/toronto-viz.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/TheDataLeek/toronto-viz/issues"
+  },
+  "homepage": "https://github.com/TheDataLeek/toronto-viz#readme",
+  "dependencies": {
+    "d3": "^7.9.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.0"
+  }
+}
