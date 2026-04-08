@@ -35,8 +35,9 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     fi
 else
     log "Cloning repo to $INSTALL_DIR..."
-    sudo git clone "$REPO" "$INSTALL_DIR"
-    sudo chown -R zoe:zoe "$INSTALL_DIR"
+    sudo mkdir -p "$INSTALL_DIR"
+    sudo chown "$(id -u):$(id -g)" "$INSTALL_DIR"
+    git clone "$REPO" "$INSTALL_DIR"
     log "Cloned at $(git -C "$INSTALL_DIR" rev-parse --short HEAD)"
 fi
 
