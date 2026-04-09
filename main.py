@@ -13,7 +13,6 @@ from liquid import Environment, FileSystemLoader
 from livereload import Server
 
 from vizlib import API_URL, SAMPLE_DATA_FILE
-from vizlib.scraper import start_scraper
 from vizlib.server import app
 
 cli = cyclopts.App()
@@ -34,7 +33,6 @@ def bundle() -> None:
 
 @cli.default
 def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> None:
-    start_scraper()
     uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload, server_header=False)
 
 

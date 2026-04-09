@@ -10,24 +10,11 @@ from vizlib import SAMPLE_DATA_FILE
 from vizlib.scraper import TABLE_NAME
 
 
-class _SharedConn:
-    """Wraps an in-memory DuckDB connection as a context manager without closing it."""
-
-    def __init__(self, conn: duckdb.DuckDBPyConnection) -> None:
-        self._conn = conn
-
-    def __enter__(self) -> duckdb.DuckDBPyConnection:
-        return self._conn
-
-    def __exit__(self, *_) -> None:
-        pass
-
-
 @pytest.fixture
 def client():
     """
     E2E fixture: populates an in-memory DuckDB with sample data, patches the
-    server to use it instead of the on-disk DB, and suppresses the scraper thread.
+    server to use it instead of the on-disk DB, and suppresses the scraper.
     """
     mem_conn = duckdb.connect(":memory:")
     vizlib.scraper.write_data(
@@ -35,8 +22,11 @@ def client():
         database_connection=mem_conn,
     )
 
-    with patch("vizlib.server.duckdb.connect", side_effect=lambda *a, **kw: _SharedConn(mem_conn)), \
-         patch("vizlib.scraper.start_scraper"):
+    async def _noop_scraper():
+        pass
+
+    with patch("vizlib.db.get_conn", return_value=mem_conn), \
+         patch("vizlib.server.scraper_loop", _noop_scraper):
         from vizlib.server import app
         yield TestClient(app)
 
