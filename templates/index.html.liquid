@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TTC Vehicle Tracker</title>
+    {% if dev %}
+    <script type="importmap">
+    {
+      "imports": {
+        "d3": "https://cdn.jsdelivr.net/npm/d3@7/+esm"
+      }
+    }
+    </script>
+    {% endif %}
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #111827; overflow: hidden; }
@@ -22,6 +31,9 @@
 <body>
     <div id="map"></div>
     <div id="status">Loading…</div>
-    <script type="module" src="dist/bundle.js"></script>
+    <script>
+        const API_URL = "{{ api_url }}";
+    </script>
+    <script type="module" src="{{ script_src }}"></script>
 </body>
 </html>

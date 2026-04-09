@@ -20,12 +20,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: astral-sh/setup-uv@v6
+
       - run: npm ci
       - run: npm run build
+      - run: uv run python ./main.py render
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
 
   deploy:
     needs: build

@@ -19,12 +19,7 @@ export class Map extends Chart {
         try {
             const data = await d3.json(API_URL);
             this.vehicles = Array.isArray(data) ? data : [];
-            this.draw();
-            const status = document.querySelector('#status');
-            if (status) {
-                status.textContent =
-                    `${this.vehicles.length} vehicles · ${new Date().toLocaleTimeString()}`;
-            }
+            this.update()
         } catch (e) {
             console.error('Fetch failed:', e);
             const status = document.querySelector('#status');
@@ -34,14 +29,33 @@ export class Map extends Chart {
 
     startFetching() {
         this.fetchVehicles();
-        setInterval(() => this.fetchVehicles(), FETCH_INTERVAL);
+        setInterval(() => {
+            this.fetchVehicles()
+            this.update()
+        }, FETCH_INTERVAL);
     }
 
     draw() {
         this.projection.translate([this.width / 2, this.height / 2]);
 
-        this.newGroup('dots');
-        this.dots.selectAll('circle')
+        this.updateVehiclePoints()
+    }
+
+    update() {
+        this.updateMetaText();
+        this.updateVehiclePoints()
+    }
+
+    updateMetaText() {
+        const status = document.querySelector('#status');
+        if (status) {
+            status.textContent = `${this.vehicles.length} vehicles · ${new Date().toLocaleTimeString()}`;
+        }
+    }
+
+    updateVehiclePoints() {
+        this.newGroup('dots')
+            .selectAll('circle')
             .data(this.vehicles, d => d.id)
             .join('circle')
             .attr('cx', d => {

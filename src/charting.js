@@ -24,6 +24,8 @@ export class Chart {
     init() {
         // need to initialize chart initially
         this.resize();
+        // and then initial draw for elements
+        this.draw();
         // and on resize, redraw
         window.addEventListener('resize', () => {
             this.resize();
@@ -31,6 +33,10 @@ export class Chart {
     }
 
     draw() {
+        // this is overridden by subclass
+    }
+
+    update() {
         // this is overridden by subclass
     }
 
@@ -50,16 +56,18 @@ export class Chart {
         this.chart
             .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
 
-        this.draw();
+        this.update()
     }
 
     newGroup(name, parent=undefined) {
         if (parent === undefined) {
             this.chart.selectAll(`.${name}`).remove();
             this[name] = this.chart.append('g').classed(name, true);
+            return this[name];
         } else {
             parent.selectAll(`.${name}`).remove();
             parent[name] = parent.append('g').classed(name, true);
+            return parent[name];
         }
     }
 }

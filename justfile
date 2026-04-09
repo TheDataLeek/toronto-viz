@@ -1,3 +1,11 @@
+# Render templates/index.html.liquid to dist/index.html (production)
+render:
+    uv run python ./main.py render
+
+# Start dev server with livereload (unbundled JS)
+dev:
+    uv run python ./main.py dev
+
 # Run ruff and ty static analysis checks
 lint:
     uv run ruff check .

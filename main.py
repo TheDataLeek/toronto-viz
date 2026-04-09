@@ -1,6 +1,7 @@
 #!/usr/bin/env -S uv run
 
 import json
+from pathlib import Path
 import subprocess
 import re
 import sys
@@ -8,6 +9,8 @@ import sys
 import uvicorn
 import requests
 import cyclopts
+from liquid import Environment, FileSystemLoader
+from livereload import Server
 
 from vizlib import API_URL, SAMPLE_DATA_FILE
 from vizlib.scraper import start_scraper
@@ -16,11 +19,52 @@ from vizlib.server import app
 cli = cyclopts.App()
 
 
+DIST = Path(__file__).parent / 'dist'
+RENDERED_INDEX = DIST / 'index.html'
+PROD_API_URL = 'https://snek.taila15010.ts.net/api/data'
+DEV_API_URL = '127.0.0.1:5000/api/data'
+
 
 @cli.default
 def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> None:
     start_scraper()
     uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload, server_header=False)
+
+
+@cli.command()
+def render(environment: str = 'dev') -> None:
+    """Render templates/index.html.liquid into dist/index.html for production."""
+    rendering_environment = {
+        'script_src': "/src/index.js",
+        'dev': True,
+        'api_url': DEV_API_URL,
+    }
+    if environment == 'prod':
+        rendering_environment = {
+            'script_src': "bundle.js",
+            'dev': False,
+            'api_url': PROD_API_URL,
+        }
+
+    DIST.mkdir(exist_ok=True)
+
+    env = Environment(loader=FileSystemLoader("templates/"))
+    template = env.get_template("index.html.liquid")
+    rendered_template = template.render(**rendering_environment)
+    RENDERED_INDEX.write_text(rendered_template)
+
+
+@cli.command()
+def dev(*, port: int = 3000) -> None:
+    """Start dev server with livereload (unbundled JS, CDN d3)."""
+    env = Environment(loader=FileSystemLoader("templates/"))
+
+    render()
+
+    server = Server()
+    server.watch("templates/index.html.liquid", render)
+    server.watch("src/*.js")
+    server.serve(root=".", port=port, open_url_delay=None)
 
 
 @cli.command()
