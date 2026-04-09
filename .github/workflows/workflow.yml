@@ -24,7 +24,7 @@ jobs:
 
       - run: npm ci
       - run: npm run build
-      - run: uv run python ./main.py render
+      - run: uv run python ./main.py render --environment prod
 
       - uses: actions/upload-pages-artifact@v3
         with:
