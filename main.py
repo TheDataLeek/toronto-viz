@@ -22,7 +22,14 @@ cli = cyclopts.App()
 DIST = Path(__file__).parent / 'dist'
 RENDERED_INDEX = DIST / 'index.html'
 PROD_API_URL = 'https://snek.taila15010.ts.net/api/data'
-DEV_API_URL = '127.0.0.1:5000/api/data'
+DEV_API_URL = 'http://127.0.0.1:5000/api/data'
+
+
+def bundle() -> None:
+    subprocess.run(
+        ["npx", "esbuild", "src/index.js", "--bundle", "--minify", "--format=esm", "--outfile=dist/bundle.js"],
+        check=True,
+    )
 
 
 @cli.default
@@ -35,16 +42,10 @@ def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> 
 def render(environment: str = 'dev') -> None:
     """Render templates/index.html.liquid into dist/index.html for production."""
     rendering_environment = {
-        'script_src': "/src/index.js",
-        'dev': True,
-        'api_url': DEV_API_URL,
+        'script_src': "./bundle.js",
+        'dev': False,
+        'api_url': DEV_API_URL if environment == 'dev' else PROD_API_URL,
     }
-    if environment == 'prod':
-        rendering_environment = {
-            'script_src': "bundle.js",
-            'dev': False,
-            'api_url': PROD_API_URL,
-        }
 
     DIST.mkdir(exist_ok=True)
 
@@ -56,15 +57,14 @@ def render(environment: str = 'dev') -> None:
 
 @cli.command()
 def dev(*, port: int = 3000) -> None:
-    """Start dev server with livereload (unbundled JS, CDN d3)."""
-    env = Environment(loader=FileSystemLoader("templates/"))
-
+    """Start dev server with livereload (bundled JS)."""
+    DIST.mkdir(exist_ok=True)
+    bundle()
     render()
-
     server = Server()
     server.watch("templates/index.html.liquid", render)
-    server.watch("src/*.js")
-    server.serve(root=".", port=port, open_url_delay=None)
+    server.watch("src/*.js", bundle)
+    server.serve(root="./dist/", port=port, open_url_delay=None)
 
 
 @cli.command()

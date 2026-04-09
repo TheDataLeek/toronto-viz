@@ -1,23 +1,21 @@
 import * as d3 from 'd3';
 import { Chart } from './charting.js';
 
-const API_URL = 'https://snek.taila15010.ts.net/api/data';
-const FETCH_INTERVAL = 60_000;
+const FETCH_INTERVAL = 30_000;
 
 export class Map extends Chart {
     constructor(selector, params = {}) {
         super(selector, params);
-        this.projection = d3.geoMercator()
-            .center([-79.38, 43.72])
-            .scale(80000);
+        this.apiUrl = params.apiUrl || 'https://snek.taila15010.ts.net/api/data';
         this.vehicles = [];
+        this.speedColors = d3.scaleLinear([0, 5, 50, 100], ["#636e72", "#636e72", "#00b894", "#e17055"])
+        this.newGroup('dots');
         this.init();
-        this.startFetching();
     }
 
     async fetchVehicles() {
         try {
-            const data = await d3.json(API_URL);
+            const data = await d3.json(this.apiUrl);
             this.vehicles = Array.isArray(data) ? data : [];
             this.update()
         } catch (e) {
@@ -27,18 +25,19 @@ export class Map extends Chart {
         }
     }
 
-    startFetching() {
+    draw() {
+        this.projection = d3.geoMercator()
+            .center([-79.38, 43.72])
+            .scale(80000)
+            .translate([this.width / 2, this.height / 2]);
+
+        this.updateVehiclePoints()
+
         this.fetchVehicles();
         setInterval(() => {
             this.fetchVehicles()
             this.update()
         }, FETCH_INTERVAL);
-    }
-
-    draw() {
-        this.projection.translate([this.width / 2, this.height / 2]);
-
-        this.updateVehiclePoints()
     }
 
     update() {
@@ -54,22 +53,48 @@ export class Map extends Chart {
     }
 
     updateVehiclePoints() {
-        this.newGroup('dots')
+        const transition = this.svg.transition().duration(750);
+        this.dots
             .selectAll('circle')
             .data(this.vehicles, d => d.id)
-            .join('circle')
-            .attr('cx', d => {
-                const p = this.projection([+d.lon, +d.lat]);
-                return p ? p[0] : null;
-            })
-            .attr('cy', d => {
-                const p = this.projection([+d.lon, +d.lat]);
-                return p ? p[1] : null;
-            })
-            .attr('r', 4)
-            .attr('fill', '#4fc3f7')
-            .attr('opacity', 0.8)
-            .append('title')
-            .text(d => `Route ${d.routeTag} · vehicle ${d.id}`);
+            .join(
+                enter => {
+                    enter.append('circle')
+                        .attr('cx', d => {
+                            const p = this.projection([+d.lon, +d.lat]);
+                            return p ? p[0] : null;
+                        })
+                        .attr('cy', d => {
+                            const p = this.projection([+d.lon, +d.lat]);
+                            return p ? p[1] : null;
+                        })
+                        .attr('r', 3)
+                        .attr('fill', d => this.speedColors(d['speedKmHr']))
+                        .attr('opacity', 0)
+                        .call(enter =>
+                            enter.transition(transition)
+                                .attr('opacity', 0.8)
+                        )
+                },
+                update => {
+                    update.call(update =>
+                        update.transition(transition)
+                            .attr('cx', d => {
+                                const p = this.projection([+d.lon, +d.lat]);
+                                return p ? p[0] : null;
+                            })
+                            .attr('cy', d => {
+                                const p = this.projection([+d.lon, +d.lat]);
+                                return p ? p[1] : null;
+                            })
+                            .attr('fill', d => this.speedColors(d['speedKmHr']))
+                    )
+                },
+                exit => {
+                    exit.call(exit =>
+                        exit.remove()
+                    )
+                },
+            )
     }
 }
