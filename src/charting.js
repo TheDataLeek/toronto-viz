@@ -6,8 +6,6 @@ export class Chart {
         this.selector = selector;
         // svg is the d3 svg element
         this.svg = d3.select(selector).append('svg');
-        // chart is the main group that we use for everything
-        this.chart = this.svg.append('g');
         // margins are the empty space outside the chart
         this.margin = params.margin || {
             top: 0,
@@ -15,6 +13,9 @@ export class Chart {
             left: 0,
             right: 0,
         };
+
+        // chart is the main group that we use for everything
+        this.chart = this.svg.append('g');
     }
 
     get selected() {

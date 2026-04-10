@@ -1,19 +1,46 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
-import duckdb
-from fastapi import FastAPI, Path, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from loguru import logger
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .db import get_conn, lock
+from .routes import limiter, router
 from .scraper import scraper_loop
-from .server_utils import _configure_logging
 
-limiter = Limiter(key_func=get_remote_address)
+
+class _InterceptHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 0
+        while frame and (depth == 0 or frame.f_code.co_filename == logging.__file__):
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+class _TLSNoiseFilter(logging.Filter):
+    """Drop 'Bad request version' 400s — HTTPS clients hitting the HTTP server."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "Bad request version" not in record.getMessage()
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(handlers=[_InterceptHandler()], level=0, force=True)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        log = logging.getLogger(name)
+        log.handlers = [_InterceptHandler()]
+        log.propagate = False
+        log.addFilter(_TLSNoiseFilter())
+
 
 _configure_logging()
 
@@ -52,48 +79,4 @@ app.add_middleware(
     allow_headers=[],
 )
 
-
-@app.get("/")
-async def index():
-    return {"status": "ok"}
-
-
-@app.get("/api/data")
-@limiter.limit("30/minute")
-async def api_data(request: Request):
-    async with lock:
-        try:
-            rows = get_conn().execute(
-                """
-                SELECT DISTINCT ON (id)
-                *
-                FROM vehicles
-                ORDER BY id, api_timestamp DESC
-                """
-            ).pl()
-        except duckdb.CatalogException:
-            return []
-    return rows.to_dicts()
-
-
-@app.get("/api/ttc/{route_id}")
-@limiter.limit("60/minute")
-async def api_route(
-    request: Request,
-    route_id: str = Path(pattern=r"^\d{1,4}[A-Z]{0,2}$"),
-):
-    async with lock:
-        try:
-            rows = get_conn().execute(
-                """
-                SELECT DISTINCT ON (id)
-                *
-                FROM vehicles
-                WHERE routeTag = ?
-                ORDER BY id, api_timestamp DESC
-                """,
-                [route_id],
-            ).pl()
-        except duckdb.CatalogException:
-            return []
-    return rows.to_dicts()
+app.include_router(router)

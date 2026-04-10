@@ -8,15 +8,17 @@ export class Map extends Chart {
         super(selector, params);
         this.apiUrl = params.apiUrl || 'https://snek.taila15010.ts.net/api/data';
         this.vehicles = [];
-        this.speedColors = d3.scaleLinear([0, 5, 50, 100], ["#636e72", "#636e72", "#00b894", "#e17055"])
+        this.speedColors = d3.scaleLinear([0, 5, 30, 100], ["#636e72", "#636e72", "#00b894", "#e17055"])
         this.newGroup('dots');
+        this.projection = d3.geoMercator()
+
         this.init();
     }
 
     async fetchVehicles() {
         try {
-            const data = await d3.json(this.apiUrl);
-            this.vehicles = Array.isArray(data) ? data : [];
+            this.data = await d3.json(this.apiUrl);
+            this.vehicles = this.data.features;
             this.update()
         } catch (e) {
             console.error('Fetch failed:', e);
@@ -26,11 +28,6 @@ export class Map extends Chart {
     }
 
     draw() {
-        this.projection = d3.geoMercator()
-            .center([-79.38, 43.72])
-            .scale(80000)
-            .translate([this.width / 2, this.height / 2]);
-
         this.updateVehiclePoints()
 
         this.fetchVehicles();
@@ -41,6 +38,11 @@ export class Map extends Chart {
     }
 
     update() {
+        if (!this.data) return;
+
+        this.projection = this.projection
+            .fitSize([this.width, this.height], this.data)
+
         this.updateMetaText();
         this.updateVehiclePoints()
     }
@@ -53,23 +55,21 @@ export class Map extends Chart {
     }
 
     updateVehiclePoints() {
+        if (!this.vehicles.length) return;
+
+        const project = d => this.projection(d.geometry.coordinates);
+
         const transition = this.svg.transition().duration(750);
         this.dots
             .selectAll('circle')
-            .data(this.vehicles, d => d.id)
+            .data(this.vehicles, d => d.properties.id)
             .join(
                 enter => {
                     enter.append('circle')
-                        .attr('cx', d => {
-                            const p = this.projection([+d.lon, +d.lat]);
-                            return p ? p[0] : null;
-                        })
-                        .attr('cy', d => {
-                            const p = this.projection([+d.lon, +d.lat]);
-                            return p ? p[1] : null;
-                        })
+                        .attr('cx', d => project(d)?.[0])
+                        .attr('cy', d => project(d)?.[1])
                         .attr('r', 3)
-                        .attr('fill', d => this.speedColors(d['speedKmHr']))
+                        .attr('fill', d => this.speedColors(d.properties.speedKmHr))
                         .attr('opacity', 0)
                         .call(enter =>
                             enter.transition(transition)
@@ -79,15 +79,9 @@ export class Map extends Chart {
                 update => {
                     update.call(update =>
                         update.transition(transition)
-                            .attr('cx', d => {
-                                const p = this.projection([+d.lon, +d.lat]);
-                                return p ? p[0] : null;
-                            })
-                            .attr('cy', d => {
-                                const p = this.projection([+d.lon, +d.lat]);
-                                return p ? p[1] : null;
-                            })
-                            .attr('fill', d => this.speedColors(d['speedKmHr']))
+                            .attr('cx', d => project(d)?.[0])
+                            .attr('cy', d => project(d)?.[1])
+                            .attr('fill', d => this.speedColors(d.properties.speedKmHr))
                     )
                 },
                 exit => {
