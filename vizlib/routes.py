@@ -27,7 +27,8 @@ async def api_data(request: Request):
                 SELECT DISTINCT ON (id)
                 *
                 FROM vehicles
-                  WHERE CAST(secsSinceReport AS INT) < (60 * 10)
+                  WHERE TRY_CAST(secsSinceReport AS INT) IS NOT NULL
+                    AND TRY_CAST(secsSinceReport AS INT) < (60 * 10)
                 ORDER BY id, api_timestamp DESC
                 """
             ).pl()
@@ -70,7 +71,8 @@ async def api_route(
                 *
                 FROM vehicles
                 WHERE routeTag = ?
-                    AND CAST(secsSinceReport AS INT) < (60 * 10)
+                    AND TRY_CAST(secsSinceReport AS INT) IS NOT NULL
+                    AND TRY_CAST(secsSinceReport AS INT) < (60 * 10)
                 ORDER BY id, api_timestamp DESC
                 """,
                 [route_id],
