@@ -18,31 +18,41 @@ from vizlib.server import app
 cli = cyclopts.App()
 
 
-DIST = Path(__file__).parent / 'dist'
-RENDERED_INDEX = DIST / 'index.html'
-PROD_API_URL = 'https://snek.taila15010.ts.net/api/data'
-DEV_API_URL = 'http://127.0.0.1:5000/api/data'
+DIST = Path(__file__).parent / "dist"
+RENDERED_INDEX = DIST / "index.html"
+PROD_API_URL = "https://snek.taila15010.ts.net/api/data"
+DEV_API_URL = "http://127.0.0.1:5000/api/data"
 
 
 def bundle() -> None:
     subprocess.run(
-        ["npx", "esbuild", "src/index.js", "--bundle", "--minify", "--format=esm", "--outfile=dist/bundle.js"],
+        [
+            "npx",
+            "esbuild",
+            "src/index.js",
+            "--bundle",
+            "--minify",
+            "--format=esm",
+            "--outfile=dist/bundle.js",
+        ],
         check=True,
     )
 
 
 @cli.default
 def main(*, host: str = "127.0.0.1", port: int = 5000, reload: bool = False) -> None:
-    uvicorn.run("vizlib.server:app", host=host, port=port, reload=reload, server_header=False)
+    uvicorn.run(
+        "vizlib.server:app", host=host, port=port, reload=reload, server_header=False
+    )
 
 
 @cli.command()
-def render(environment: str = 'dev') -> None:
+def render(environment: str = "dev") -> None:
     """Render templates/index.html.liquid into dist/index.html for production."""
     rendering_environment = {
-        'script_src': "./bundle.js",
-        'dev': False,
-        'api_url': DEV_API_URL if environment == 'dev' else PROD_API_URL,
+        "script_src": "./bundle.js",
+        "dev": False,
+        "api_url": DEV_API_URL if environment == "dev" else PROD_API_URL,
     }
 
     DIST.mkdir(exist_ok=True)
@@ -77,7 +87,9 @@ def pingscan(*, ip_only: bool = False) -> None:
     """Scan local network and find the Raspberry Pi."""
 
     # 1. Discover local subnet via `ip route`
-    result = subprocess.run(["ip", "route", "show"], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        ["ip", "route", "show"], capture_output=True, text=True, check=True
+    )
     subnet = None
     for line in result.stdout.splitlines():
         m = re.match(r"(\d+\.\d+\.\d+\.\d+/\d+)\s+dev", line)
@@ -108,7 +120,7 @@ def pingscan(*, ip_only: bool = False) -> None:
     lines = scan.stdout.splitlines()
     pi_hosts = []
     current_host = None
-    candidate_strings = ['raspberry pi', 'pi.hole', 'pihole', 'pi-hole']
+    candidate_strings = ["raspberry pi", "pi.hole", "pihole", "pi-hole"]
     for line in lines:
         if line.startswith("Nmap scan report for"):
             current_host = line.removeprefix("Nmap scan report for ").strip()
@@ -119,7 +131,7 @@ def pingscan(*, ip_only: bool = False) -> None:
     if pi_hosts:
         if ip_only:
             host = pi_hosts[0]
-            m = re.search(r'\((\d+\.\d+\.\d+\.\d+)\)', host)
+            m = re.search(r"\((\d+\.\d+\.\d+\.\d+)\)", host)
             print(m.group(1) if m else host)
         else:
             print("=== Raspberry Pi candidates ===")

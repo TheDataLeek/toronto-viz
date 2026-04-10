@@ -8,23 +8,26 @@ import polars as pl
 from loguru import logger
 
 from . import API_URL, SCRAPE_INTERVAL
-from .db import get_conn, lock
+from .db import get_write_conn
 
-TABLE_NAME = 'vehicles'
+TABLE_NAME = "vehicles"
 
 
 async def _scrape(session: aiohttp.ClientSession, last_time: str) -> str:
     async with session.get(API_URL, params={"t": last_time}) as resp:
         resp.raise_for_status()
         data = await resp.json()
-        async with lock:
-            await asyncio.to_thread(write_data, data, get_conn())
+        write_data(data, get_write_conn())
         return data["lastTime"]["time"]
 
 
-def write_data(data: dict[str, Any], database_connection: duckdb.DuckDBPyConnection | None = None):
-    conn = database_connection or get_conn()
-    vehicle_api_timestamp = datetime.datetime.fromtimestamp(int(data['lastTime']['time']) / 1000)
+def write_data(
+    data: dict[str, Any], database_connection: duckdb.DuckDBPyConnection | None = None
+):
+    conn = database_connection or get_write_conn()
+    vehicle_api_timestamp = datetime.datetime.fromtimestamp(
+        int(data["lastTime"]["time"]) / 1000
+    )
     df = pl.DataFrame(data["vehicle"]).with_columns(
         fetched_at=pl.lit(datetime.datetime.now()),
         api_timestamp=pl.lit(vehicle_api_timestamp),
@@ -53,3 +56,7 @@ async def scraper_loop() -> None:
             except Exception as exc:
                 logger.error("Scrape failed: %s", exc)
             await asyncio.sleep(SCRAPE_INTERVAL)
+
+
+if __name__ == "__main__":
+    asyncio.run(scraper_loop())

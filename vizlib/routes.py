@@ -1,15 +1,18 @@
+import datetime
+
 import duckdb
 import polars as pl
 from fastapi import APIRouter, Path, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from .db import get_conn, lock
-from .util import to_geojson, to_geojson_paths, to_response
+from .db import query_database
+from .util import to_geojson, to_geojson_paths
 
 limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
+
 
 @router.get("/")
 async def index():
@@ -19,64 +22,36 @@ async def index():
 @router.get("/api/data")
 @limiter.limit("30/minute")
 async def api_data(request: Request):
-    rows = None
-    async with lock:
-        try:
-            rows = get_conn().execute(
-                """
-                SELECT DISTINCT ON (id)
-                *
-                FROM vehicles
-                  WHERE TRY_CAST(secsSinceReport AS INT) IS NOT NULL
-                    AND TRY_CAST(secsSinceReport AS INT) < (60 * 10)
-                ORDER BY id, api_timestamp DESC
-                """
-            ).pl()
-        except duckdb.CatalogException:
-            pass
-    return to_geojson(rows)
+    df = (
+        query_database(
+            """
+            SELECT DISTINCT ON (id)
+              *
+            FROM vehicles
+            """,
+        )
+        .with_columns(
+            secsSinceReport=pl.col("secsSinceReport").cast(pl.Float64, strict=False),
+        )
+        .filter(
+            pl.col("secsSinceReport").is_not_null()
+            & (pl.col("secsSinceReport") < (5 * 60))
+        )
+    )
+    return to_geojson(df)
+
 
 @router.get("/api/paths")
 @limiter.limit("30/minute")
 async def api_paths(request: Request, seconds: int = 5 * 60):
-    rows = None
-    async with lock:
-        try:
-            rows = get_conn().execute(
-                """
-                SELECT *
-                FROM vehicles
-                WHERE api_timestamp > epoch_ms(now()) - ? * 1000
-                ORDER BY id, api_timestamp ASC
-                """,
-                [seconds],
-            ).pl()
-        except duckdb.CatalogException:
-            pass
-    return to_geojson_paths(rows)
+    df = query_database(
+        """
+        SELECT *
+        FROM vehicles
+        """,
+    ).filter(
+        pl.col('api_timestamp') >= (datetime.datetime.now().timestamp() - seconds)
+    )
+    return to_geojson_paths(df)
 
 
-@router.get("/api/ttc/{route_id}")
-@limiter.limit("60/minute")
-async def api_route(
-    request: Request,
-    route_id: str = Path(pattern=r"^\d{1,4}[A-Z]{0,2}$"),
-):
-    rows = None
-    async with lock:
-        try:
-            rows = get_conn().execute(
-                """
-                SELECT DISTINCT ON (id)
-                *
-                FROM vehicles
-                WHERE routeTag = ?
-                    AND TRY_CAST(secsSinceReport AS INT) IS NOT NULL
-                    AND TRY_CAST(secsSinceReport AS INT) < (60 * 10)
-                ORDER BY id, api_timestamp DESC
-                """,
-                [route_id],
-            ).pl()
-        except duckdb.CatalogException:
-            pass
-    return to_geojson(rows)

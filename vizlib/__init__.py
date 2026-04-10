@@ -1,6 +1,8 @@
 from pathlib import Path
 
-API_URL = "https://retro.umoiq.com/service/publicJSONFeed?command=vehicleLocations&a=ttc"
+API_URL = (
+    "https://retro.umoiq.com/service/publicJSONFeed?command=vehicleLocations&a=ttc"
+)
 SCRAPE_INTERVAL = 60
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)

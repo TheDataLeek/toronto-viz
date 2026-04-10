@@ -3,17 +3,23 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "loguru",
+#   "rich",
 # ]
 # ///
 
 import os
 import pwd
+import shlex
 import shutil
 import stat
 import subprocess
-import sys
 from pathlib import Path
+from typing import Union
 
+import rich.console
+import rich.padding
+import rich.syntax
+import rich.text
 from loguru import logger
 
 REPO = "https://github.com/TheDataLeek/toronto-viz.git"
@@ -36,7 +42,7 @@ def main() -> None:
     run_sh.chmod(run_sh.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
     logger.info("Syncing dependencies (no-dev)...")
-    run("uv", "sync", "--no-dev", "--project", str(INSTALL_DIR), as_user=user)
+    run_cmd(["uv", "sync", "--no-dev", "--project", str(INSTALL_DIR)], as_user=user)
     logger.info("Dependencies synced")
 
     logger.info("Installing systemd service unit (User={})...", user)
@@ -59,7 +65,10 @@ def service_user() -> tuple[str, Path]:
 
 def ensure_uv() -> None:
     if shutil.which("uv"):
-        logger.info("uv already installed: {}", capture("uv", "--version"))
+        logger.info(
+            "uv already installed: {}",
+            run_cmd(["uv", "--version"], show_output=False, silent=True),
+        )
         return
 
     logger.info("uv not found — installing...")
@@ -71,21 +80,38 @@ def ensure_uv() -> None:
     else:
         logger.info("  target: ~/.local/bin")
 
-    subprocess.run("curl -LsSf https://astral.sh/uv/install.sh | sh", shell=True, env=env, check=True)
+    subprocess.run(
+        "curl -LsSf https://astral.sh/uv/install.sh | sh",
+        shell=True,
+        env=env,
+        check=True,
+    )
 
     if os.getuid() != 0:
         local_bin = Path.home() / ".local" / "bin"
         os.environ["PATH"] = f"{local_bin}:{os.environ['PATH']}"
 
-    logger.info("uv installed: {}", capture("uv", "--version"))
+    logger.info(
+        "uv installed: {}", run_cmd(["uv", "--version"], show_output=False, silent=True)
+    )
 
 
 def sync_repo(user: str) -> None:
     if (INSTALL_DIR / ".git").exists():
         logger.info("Repo exists — pulling latest...")
-        before = capture("git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD", as_user=user)
-        run("git", "-C", str(INSTALL_DIR), "pull", "--ff-only", as_user=user)
-        after = capture("git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD", as_user=user)
+        before = run_cmd(
+            ["git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD"],
+            as_user=user,
+            show_output=False,
+            silent=True,
+        )
+        run_cmd(["git", "-C", str(INSTALL_DIR), "pull", "--ff-only"], as_user=user)
+        after = run_cmd(
+            ["git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD"],
+            as_user=user,
+            show_output=False,
+            silent=True,
+        )
         if before == after:
             logger.info("Already up to date ({})", after)
         else:
@@ -95,8 +121,13 @@ def sync_repo(user: str) -> None:
         INSTALL_DIR.mkdir(parents=True, exist_ok=True)
         entry = pwd.getpwnam(user)
         os.chown(INSTALL_DIR, entry.pw_uid, entry.pw_gid)
-        run("git", "clone", REPO, str(INSTALL_DIR), as_user=user)
-        rev = capture("git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD", as_user=user)
+        run_cmd(["git", "clone", REPO, str(INSTALL_DIR)], as_user=user)
+        rev = run_cmd(
+            ["git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD"],
+            as_user=user,
+            show_output=False,
+            silent=True,
+        )
         logger.info("Cloned at {}", rev)
 
 
@@ -107,21 +138,71 @@ def install_service(user: str) -> None:
     dest.write_text(unit)
     logger.info("Wrote {}", dest)
 
-    run("systemctl", "daemon-reload")
+    run_cmd(["systemctl", "daemon-reload"])
     logger.info("Enabling {} ...", SERVICE_NAME)
-    run("systemctl", "enable", SERVICE_NAME)
+    run_cmd(["systemctl", "enable", SERVICE_NAME])
     logger.info("Restarting {} ...", SERVICE_NAME)
-    run("systemctl", "restart", SERVICE_NAME)
+    run_cmd(["systemctl", "restart", SERVICE_NAME])
 
 
-def run(*cmd: str, as_user: str | None = None, check: bool = True) -> subprocess.CompletedProcess:
-    full = ["sudo", "-u", as_user, *cmd] if as_user else list(cmd)
-    return subprocess.run(full, check=check)
+def run_cmd(
+    cmd: Union[str, list[str]],
+    *,
+    as_user: str | None = None,
+    show_output: bool = True,
+    silent: bool = False,
+    **subprocess_kwargs,
+) -> str:
+    console = rich.console.Console()
 
+    if isinstance(cmd, (list, tuple)):
+        cmd = " ".join(shlex.quote(str(c)) for c in cmd)
+    if as_user:
+        cmd = f"sudo -u {shlex.quote(as_user)} {cmd}"
 
-def capture(*cmd: str, as_user: str | None = None) -> str:
-    full = ["sudo", "-u", as_user, *cmd] if as_user else list(cmd)
-    return subprocess.run(full, capture_output=True, text=True, check=True).stdout.strip()
+    kwargs = {"shell": True, "capture_output": True, "text": True, **subprocess_kwargs}
+    process = subprocess.run(cmd, **kwargs)
+    output = process.stdout.strip()
+    error = process.stderr.strip()
+
+    if not silent:
+        console.print(
+            rich.console.Group(
+                rich.text.Text("$~~>", end=" "),
+                rich.text.Text(cmd, style="bold green"),
+            )
+        )
+
+    if process.returncode != 0:
+        console.print(
+            rich.padding.Padding(rich.syntax.Syntax(error, "bash"), (0, 0, 0, 2))
+        )
+        console.print(
+            rich.text.Text(
+                "Unexpected error occurred while running the command.", style="bold red"
+            )
+        )
+        raise SystemError(error)
+
+    if show_output:
+        if output:
+            console.print(
+                rich.padding.Padding(rich.syntax.Syntax(output, "bash"), (0, 0, 0, 2))
+            )
+        if error:
+            console.print(
+                rich.padding.Padding(rich.syntax.Syntax(error, "bash"), (0, 0, 0, 2))
+            )
+    elif not silent:
+        console.print(
+            rich.padding.Padding(
+                rich.text.Text("result truncated", style="lightgrey"),
+                (0, 0, 0, 2),
+                style="dim",
+            )
+        )
+
+    return output
 
 
 if __name__ == "__main__":

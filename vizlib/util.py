@@ -4,23 +4,21 @@ import functools
 import polars as pl
 
 
-PROPERTY_COLS = ["id", "routeTag", "dirTag", "heading", "speedKmHr", "predictable", "secsSinceReport", "api_timestamp", "fetched_at"]
-
-
-def to_geojson(rows: pl.DataFrame = None) -> dict:
-    if rows is None:
+def to_geojson(data: pl.DataFrame = None) -> dict:
+    if (data is None) or (len(data) == 0):
         return {"type": "FeatureCollection", "features": []}
 
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [row["lon"], row["lat"]]},
-            "properties": {col: row[col] for col in PROPERTY_COLS if col in row},
-        }
-        for row in rows.to_dicts()
-    ]
-    return {"type": "FeatureCollection", "features": features}
-
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [row["lon"], row["lat"]]},
+                "properties": row,
+            }
+            for row in data.to_dicts()
+        ],
+    }
 
 
 def to_geojson_paths(rows: pl.DataFrame = None) -> dict:
@@ -41,10 +39,5 @@ def to_geojson_paths(rows: pl.DataFrame = None) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
-def to_response(data: dict[str, Any], status: str='ok', **kwargs) -> dict[str, Any]:
-    return {
-        'data': data,
-        'status': status,
-        **kwargs
-    }
-
+def to_response(data: dict[str, Any], status: str = "ok", **kwargs) -> dict[str, Any]:
+    return {"data": data, "status": status, **kwargs}

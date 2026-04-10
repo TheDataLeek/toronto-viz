@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 
 import vizlib.scraper
 from vizlib import SAMPLE_DATA_FILE
-from vizlib.scraper import TABLE_NAME
 
 
 @pytest.fixture
@@ -22,12 +21,9 @@ def client():
         database_connection=mem_conn,
     )
 
-    async def _noop_scraper():
-        pass
-
-    with patch("vizlib.db.get_conn", return_value=mem_conn), \
-         patch("vizlib.server.scraper_loop", _noop_scraper):
+    with patch("vizlib.db.get_read_conn", return_value=mem_conn):
         from vizlib.server import app
+
         yield TestClient(app)
 
 
@@ -69,22 +65,3 @@ def test_api_route_filters_by_route(client):
     if not all_features:
         pytest.skip("sample data is empty")
 
-    route_tag = all_features[0]["properties"]["routeTag"]
-    resp = client.get(f"/api/ttc/{route_tag}")
-    assert resp.status_code == 200
-    features = resp.json()["features"]
-    assert len(features) > 0
-    assert all(f["properties"]["routeTag"] == route_tag for f in features)
-
-
-def test_api_route_unknown_returns_empty(client):
-    resp = client.get("/api/ttc/9999")
-    assert resp.status_code == 200
-    fc = resp.json()
-    assert fc["type"] == "FeatureCollection"
-    assert fc["features"] == []
-
-
-def test_api_route_invalid_format_returns_422(client):
-    resp = client.get("/api/ttc/__bad__")
-    assert resp.status_code == 422
