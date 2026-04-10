@@ -21,7 +21,7 @@ def client():
         database_connection=mem_conn,
     )
 
-    with patch("vizlib.db.get_read_conn", return_value=mem_conn):
+    with patch("vizlib.db.get_write_conn", return_value=mem_conn):
         from vizlib.server import app
 
         yield TestClient(app)
