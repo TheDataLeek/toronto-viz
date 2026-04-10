@@ -24,12 +24,14 @@ def fetch_paths(cutoff_seconds: float = None) -> pl.DataFrame:
         """
         SELECT *
         FROM vehicles
-        ORDER BY id, api_timestamp DESC
         """,
     )
     df = _filter_df_for_recency(df, cutoff_seconds)
 
-    df = df.group_by("id", maintain_order=True).agg(path=pl.struct(pl.all()))
+    df = df.group_by("id").agg(
+        path=pl.struct(pl.all()),
+        avgSpeedKmHr=pl.col('speedKmHr').cast(pl.Float64, strict=False).fill_null(0).mean(),
+    )
 
     return df
 

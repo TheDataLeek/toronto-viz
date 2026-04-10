@@ -27,6 +27,7 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
                     "type": "LineString",
                     "coordinates": coords
                 }
+                geojson_record['points'] = points
             case {"lat": latitude, "lon": longitude}:
                 geometry = {
                     "type": "Point",

@@ -8,7 +8,10 @@ export class Map extends Chart {
         super(selector, params);
         this.apiUrl = params.apiUrl || 'https://snek.taila15010.ts.net/api/paths';
         this.vehicles = [];
-        this.speedColors = d3.scaleLinear([0, 5, 30, 100], ["#636e72", "#636e72", "#00b894", "#e17055"])
+        this.speedColors = d3.scaleLinear(
+            [0, 5, 10, 20, 30, 40, 50],
+            ["#636e72", "#5b8dcc", "#10a090", "#20a060", "#c07a10", "#c83020", "#a00c18"]
+        ).interpolate(d3.interpolateHcl).clamp(true)
         this.vehicleGroup = this.newGroup('vehicleGroup');
         this.projection = d3.geoMercator()
 
@@ -65,17 +68,15 @@ export class Map extends Chart {
         const transition = this.svg.transition().duration(750);
 
         this.vehicles.forEach((vehicle) => {
-            let coords = vehicle.geometry.coordinates;
+            let coords = vehicle.geometry.coordinates || [];
+            let points = vehicle.points || [];
+
             vehicle.lineString = line(coords);
-            // vehicle.lastCoords = coords[coords.length - 1];
-            // let lastPos = this.projection(vehicle.lastCoords);
-            // if (lastPos) {
-            //     vehicle.lastPos = lastPos;
-            //     if (vehicle.lastPos) {
-            //         vehicle.lastPosX = this.lastPos[0];
-            //         vehicle.lastPosY = this.lastPos[1];
-            //     }
-            // }
+            vehicle.lastCoords = coords[coords.length - 1];
+            vehicle.lastPoint = points[points.length - 1];
+            vehicle.lastPos = this.projection(vehicle.lastCoords) || [null, null];
+            vehicle.lastPosX = vehicle.lastPos[0];
+            vehicle.lastPosY = vehicle.lastPos[1];
         })
 
         console.log(this.vehicles)
@@ -85,35 +86,40 @@ export class Map extends Chart {
             .data(this.vehicles, d => d.properties.id)
             .join(
                 enter => {
-                    let vehicleSubGroup = enter.append('g');
+                    let vehicleSubGroup = enter.append('g')
+                        .attr('opacity', 0)
+                        .attr('id', d => `vehicle-${d.properties.id}`);
 
                     vehicleSubGroup.append('path')
                         .attr('d', d => d.lineString)
                         .attr('fill', 'none')
                         .attr('stroke-width', 1)
-                        .attr('stroke-opacity', 0.8)
-                        .attr('stroke', 'grey');
+                        .attr('stroke-opacity', 0.5)
+                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
+                    ;
 
-                    // vehicleSubGroup.append('circle')
-                    //     .attr('cx', d => d.geometry.coordinates[d.geometry.coordinates.length - 1])
-                    //     .attr('cy', d => project(d)?.[1])
-                    //     .attr('r', 3)
-                    //     .attr('fill', d => this.speedColors(d.properties.speedKmHr))
-                    //     .attr('opacity', 0)
-                    //     .call(enter =>
-                    //         enter.transition(transition)
-                    //             .attr('opacity', 0.8)
-                    //     )
+                    vehicleSubGroup.append('circle')
+                        .attr('cx', d => d.lastPosX)
+                        .attr('cy', d => d.lastPosY)
+                        .attr('r', 3)
+                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0))
+                        .attr('opacity', 0.8);
+
+                    vehicleSubGroup
+                        .call(enter => enter.transition(transition).attr('opacity', 1))
                 },
                 update => {
-                    update.call(update =>
+                    update.call(update => {
                         update.selectAll('path')
                             .transition(transition)
-                            .attr('d', d => d.lineString)
+                            .attr('d', d => d.lineString);
 
-                            // .attr('cx', d => project(d)?.[0])
-                            // .attr('cy', d => project(d)?.[1])
-                            // .attr('fill', d => this.speedColors(d.properties.speedKmHr))
+                        update.selectAll('circle')
+                            .transition(transition)
+                            .attr('cx', d => d.lastPosX)
+                            .attr('cy', d => d.lastPosY)
+                            .attr('fill', d => d.color);
+                        }
                     )
                 },
                 exit => {
