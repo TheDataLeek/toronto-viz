@@ -1,5 +1,5 @@
 import * as d3 from 'd3';
-import { Chart } from './charting.js';
+import {Chart} from './charting.js';
 
 const FETCH_INTERVAL = 30_000;
 
@@ -14,6 +14,18 @@ export class Map extends Chart {
         ).interpolate(d3.interpolateHcl).clamp(true)
         this.vehicleGroup = this.newGroup('vehicleGroup');
         this.projection = d3.geoMercator()
+
+        let transform;
+        this.zoom = d3.zoom().on("zoom", e => {
+            this.chart.attr("transform", (transform = e.transform));
+            this.chart.style("stroke-width", 3 / Math.sqrt(transform.k));
+        });
+
+        this.svg
+            .call(this.zoom)
+            .call(this.zoom.transform, d3.zoomIdentity);
+
+        this.resized = false;
 
         this.init();
     }
@@ -44,8 +56,11 @@ export class Map extends Chart {
     update() {
         if (!this.data) return;
 
-        this.projection = this.projection
-            .fitSize([this.width, this.height], this.data)
+        if (!this.resized && this.vehicles.length) {
+            this.projection = this.projection
+                .fitSize([this.width, this.height], this.data)
+            this.resized = true;
+        }
 
         this.updateMetaText();
         this.updateVehiclePoints()
@@ -64,8 +79,6 @@ export class Map extends Chart {
         const line = d3.line()
             .x(d => this.projection(d)[0])
             .y(d => this.projection(d)[1])
-
-        const transition = this.svg.transition().duration(750);
 
         this.vehicles.forEach((vehicle) => {
             let coords = vehicle.geometry.coordinates || [];
@@ -86,48 +99,44 @@ export class Map extends Chart {
             .data(this.vehicles, d => d.properties.id)
             .join(
                 enter => {
-                    let vehicleSubGroup = enter.append('g')
+                    const g = enter.append('g')
                         .attr('opacity', 0)
                         .attr('id', d => `vehicle-${d.properties.id}`);
 
-                    vehicleSubGroup.append('path')
+                    g.append('path')
                         .attr('d', d => d.lineString)
                         .attr('fill', 'none')
                         .attr('stroke-width', 1)
                         .attr('stroke-opacity', 0.5)
-                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
-                    ;
+                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
 
-                    vehicleSubGroup.append('circle')
+                    g.append('circle')
                         .attr('cx', d => d.lastPosX)
                         .attr('cy', d => d.lastPosY)
-                        .attr('r', 3)
-                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0))
-                        .attr('opacity', 0.8);
+                        .attr('r', 2)
+                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
 
-                    vehicleSubGroup
-                        .call(enter => enter.transition(transition).attr('opacity', 1))
+                    g.transition().duration(750).attr('opacity', 1);
+
+                    return g;
                 },
                 update => {
-                    update.call(update => {
-                        update.selectAll('path')
-                            .transition(transition)
-                            .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
-                            .attr('d', d => d.lineString);
+                    const t = update.transition().duration(750);
 
-                        update.selectAll('circle')
-                            .transition(transition)
-                            .attr('cx', d => d.lastPosX)
-                            .attr('cy', d => d.lastPosY)
-                            .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
-                        }
-                    )
+                    t.select('path')
+                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
+                        .attr('d', d => d.lineString);
+
+                    t.select('circle')
+                        .attr('cx', d => d.lastPosX)
+                        .attr('cy', d => d.lastPosY)
+                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
+
+                    return update;
                 },
                 exit => {
-                    exit.call(exit =>
-                        exit.remove()
-                    )
-                },
+                    return exit.remove()
+                }
             )
     }
 }
