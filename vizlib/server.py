@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,7 @@ from slowapi import _rate_limit_exceeded_handler
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .routes import limiter, router
+from .scraper import scraper_loop
 
 
 class _InterceptHandler(logging.Handler):
@@ -44,7 +47,14 @@ def _configure_logging() -> None:
 _configure_logging()
 
 
-app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    task = asyncio.create_task(scraper_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(lifespan=_lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
