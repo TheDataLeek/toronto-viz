@@ -105,7 +105,9 @@ def sync_repo(user: str) -> None:
             show_output=False,
             silent=True,
         )
-        run_cmd(["git", "-C", str(INSTALL_DIR), "reset", "--hard", "HEAD"], as_user=user)
+        run_cmd(
+            ["git", "-C", str(INSTALL_DIR), "reset", "--hard", "HEAD"], as_user=user
+        )
         run_cmd(["git", "-C", str(INSTALL_DIR), "pull", "--ff-only"], as_user=user)
         after = run_cmd(
             ["git", "-C", str(INSTALL_DIR), "rev-parse", "--short", "HEAD"],

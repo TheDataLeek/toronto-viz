@@ -1,13 +1,9 @@
-import datetime
-
-import duckdb
-import polars as pl
-from fastapi import APIRouter, Path, Request
+from fastapi import APIRouter, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from .db import query_database
-from .util import to_geojson, to_geojson_paths
+from .util import to_geojson
+from . import data
 
 limiter = Limiter(key_func=get_remote_address)
 
@@ -22,36 +18,12 @@ async def index():
 @router.get("/api/data")
 @limiter.limit("30/minute")
 async def api_data(request: Request):
-    df = (
-        query_database(
-            """
-            SELECT DISTINCT ON (id)
-              *
-            FROM vehicles
-            """,
-        )
-        .with_columns(
-            secsSinceReport=pl.col("secsSinceReport").cast(pl.Float64, strict=False),
-        )
-        .filter(
-            pl.col("secsSinceReport").is_not_null()
-            & (pl.col("secsSinceReport") < (5 * 60))
-        )
-    )
+    df = data.fetch_locations(cutoff_seconds=60)
     return to_geojson(df)
 
 
 @router.get("/api/paths")
 @limiter.limit("30/minute")
 async def api_paths(request: Request, seconds: int = 5 * 60):
-    df = query_database(
-        """
-        SELECT *
-        FROM vehicles
-        """,
-    ).filter(
-        pl.col('api_timestamp') >= (datetime.datetime.now().timestamp() - seconds)
-    )
-    return to_geojson_paths(df)
-
-
+    df = data.fetch_paths(cutoff_seconds=seconds)
+    return to_geojson(df, sort_paths_by='api_timestamp')

@@ -1,4 +1,5 @@
 import json
+import time
 from unittest.mock import patch
 
 import duckdb
@@ -16,10 +17,9 @@ def client():
     server to use it instead of the on-disk DB, and suppresses the scraper.
     """
     mem_conn = duckdb.connect(":memory:")
-    vizlib.scraper.write_data(
-        json.loads(SAMPLE_DATA_FILE.read_text()),
-        database_connection=mem_conn,
-    )
+    sample_data = json.loads(SAMPLE_DATA_FILE.read_text())
+    sample_data["lastTime"]["time"] = str(int(time.time() * 1000))
+    vizlib.scraper.write_data(sample_data, database_connection=mem_conn)
 
     with patch("vizlib.db.get_write_conn", return_value=mem_conn):
         from vizlib.server import app
@@ -64,4 +64,3 @@ def test_api_route_filters_by_route(client):
     all_features = client.get("/api/data").json()["features"]
     if not all_features:
         pytest.skip("sample data is empty")
-
