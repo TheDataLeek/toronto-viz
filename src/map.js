@@ -112,13 +112,14 @@ export class Map extends Chart {
                     update.call(update => {
                         update.selectAll('path')
                             .transition(transition)
+                            .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
                             .attr('d', d => d.lineString);
 
                         update.selectAll('circle')
                             .transition(transition)
                             .attr('cx', d => d.lastPosX)
                             .attr('cy', d => d.lastPosY)
-                            .attr('fill', d => d.color);
+                            .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
                         }
                     )
                 },
