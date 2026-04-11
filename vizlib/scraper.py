@@ -116,8 +116,6 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
                 ,stop_code
                 ,stop_name
                 ,stop_desc
-                ,stop_lat
-                ,stop_lon
                 ,zone_id
                 ,stop_url
                 ,location_type
@@ -167,7 +165,7 @@ def write_location_data(
     conn.execute(
         f"""
             CREATE TABLE IF NOT EXISTS {TABLE_NAME} AS
-            SELECT * FROM _df
+            SELECT DISTINCT * FROM _df
         """
     )
     result = conn.execute(f"""

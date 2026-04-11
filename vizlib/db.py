@@ -23,10 +23,11 @@ def query_database(query: str, *args, **kwargs) -> pl.DataFrame:
     return rows
 
 
-def load_spatial():
-    conn = get_write_conn()
+def load_spatial(conn: duckdb.DuckDBPyConnection | None = None):
+    if conn is None:
+        conn = get_write_conn()
     try:
-        conn.execute("SELECT CAST('POINT(0 0)' AS GEOMETRY)")
+        conn.execute("SELECT ST_X(ST_GeomFromText('POINT(0 0)'))")
     except duckdb.Error:
         conn.execute("INSTALL spatial")
         conn.execute("LOAD spatial")

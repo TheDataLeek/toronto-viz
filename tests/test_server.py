@@ -3,6 +3,7 @@ import time
 from unittest.mock import patch
 
 import duckdb
+import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
@@ -64,3 +65,36 @@ def test_api_route_filters_by_route(client):
     all_features = client.get("/api/data").json()["features"]
     if not all_features:
         pytest.skip("sample data is empty")
+
+
+def test_api_paths_returns_linestrings(client):
+    resp = client.get("/api/paths")
+    assert resp.status_code == 200
+    fc = resp.json()
+    assert fc["type"] == "FeatureCollection"
+    assert len(fc["features"]) > 0
+    feature = fc["features"][0]
+    assert feature["type"] == "Feature"
+    assert feature["geometry"]["type"] == "LineString"
+    assert len(feature["geometry"]["coordinates"]) >= 1
+
+
+def test_api_stops_returns_point_features(client):
+    stops_df = pl.DataFrame(
+        {
+            "stop_id": ["1001", "1002"],
+            "coords": [[-79.383, 43.653], [-79.400, 43.670]],
+        }
+    )
+    with patch("vizlib.data.fetch_stops", return_value=stops_df):
+        resp = client.get("/api/stops")
+    assert resp.status_code == 200
+    fc = resp.json()
+    assert fc["type"] == "FeatureCollection"
+    assert len(fc["features"]) == 2
+    for feature in fc["features"]:
+        assert feature["type"] == "Feature"
+        assert feature["geometry"]["type"] == "Point"
+        assert len(feature["geometry"]["coordinates"]) == 2
+        assert "stop_id" in feature["properties"]
+        assert "coords" not in feature["properties"]

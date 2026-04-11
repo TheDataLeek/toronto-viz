@@ -2,7 +2,7 @@ import datetime
 
 import polars as pl
 
-from .db import query_database
+from .db import query_database, load_spatial
 
 
 def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
@@ -15,6 +15,19 @@ def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
             """,
     )
     df = _filter_df_for_recency(df, cutoff_seconds)
+
+    return df
+
+def fetch_stops() -> pl.DataFrame:
+    load_spatial()
+    df = query_database(
+        """
+        SELECT
+          stop_id
+          , [ST_X(coords), ST_Y(coords)] AS coords
+        FROM stops
+        """
+    )
 
     return df
 

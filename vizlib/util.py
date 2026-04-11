@@ -28,7 +28,7 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
         geojson_record = {
             "type": "Feature",
             "properties": {
-                k: v for k, v in row.items() if k not in ["path", "lat", "lon"]
+                k: v for k, v in row.items() if k not in ["path", "lat", "lon", 'coords']
             },
         }
         geometry = None
@@ -47,6 +47,11 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
                 geometry = {
                     "type": "Point",
                     "coordinates": [longitude, latitude],
+                }
+            case {'coords': coords}:
+                geometry = {
+                    "type": "Point",
+                    "coordinates": coords,
                 }
 
         if geometry is not None:
