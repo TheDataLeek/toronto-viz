@@ -2,6 +2,31 @@ import * as d3 from 'd3';
 import {Chart} from './charting.js';
 
 const FETCH_INTERVAL = 30_000;
+const ONE_DAY_MS = 86_400_000;
+
+function cacheGet(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch { return null; }
+}
+
+function cacheSet(key, value, ttlMs = null) {
+    try {
+        localStorage.setItem(key, JSON.stringify({
+            ts: Date.now(),
+            ttl: ttlMs,
+            data: value,
+        }));
+    } catch { /* storage full — silently skip */ }
+}
+
+function cacheFresh(entry) {
+    if (!entry) return false;
+    if (entry.ttl == null) return true;
+    return (Date.now() - entry.ts) < entry.ttl;
+}
 
 export class Map extends Chart {
     constructor(selector, params = {}) {
@@ -34,7 +59,13 @@ export class Map extends Chart {
     async fetchRoutes() {
         try {
             if (!this.routes) {
-                this.routes = await d3.json(`${this.baseUrl}/api/routes`);
+                const cached = cacheGet('ttc:routes');
+                if (cacheFresh(cached)) {
+                    this.routes = cached.data;
+                } else {
+                    this.routes = await d3.json(`${this.baseUrl}/api/routes`);
+                    cacheSet('ttc:routes', this.routes, ONE_DAY_MS);
+                }
                 this.render();
             }
         } catch (e) {
@@ -45,7 +76,13 @@ export class Map extends Chart {
     async fetchStops() {
         try {
             if (!this.stops) {
-                this.stops = await d3.json(`${this.baseUrl}/api/stops`);
+                const cached = cacheGet('ttc:stops');
+                if (cacheFresh(cached)) {
+                    this.stops = cached.data;
+                } else {
+                    this.stops = await d3.json(`${this.baseUrl}/api/stops`);
+                    cacheSet('ttc:stops', this.stops, ONE_DAY_MS);
+                }
                 this.updateProjection();
                 this.render();
             }
@@ -58,6 +95,7 @@ export class Map extends Chart {
         try {
             this.data = await d3.json(`${this.baseUrl}/api/paths`);
             this.vehicles = this.data.features;
+            cacheSet('ttc:vehicles', this.data);
             this.update();
         } catch (e) {
             console.error('Fetch failed:', e);
@@ -67,6 +105,12 @@ export class Map extends Chart {
     }
 
     draw() {
+        const cachedVehicles = cacheGet('ttc:vehicles');
+        if (cachedVehicles) {
+            this.data = cachedVehicles.data;
+            this.vehicles = this.data.features;
+        }
+
         this.fetchRoutes();
         this.fetchStops();
         this.fetchVehicles();
