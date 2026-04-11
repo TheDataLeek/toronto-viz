@@ -3,8 +3,8 @@ export { Map } from './map.js';
 export * as d3 from 'd3';
 
 import { Map as TTCMap } from './map.js';
-export function init({ apiUrl } = {}) {
-    new TTCMap('#map', { apiUrl, margin: {
+export function init({ baseUrl } = {}) {
+    new TTCMap('#map', { baseUrl, margin: {
             top: 100,
             bottom: 100,
             left: 100,

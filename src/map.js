@@ -6,12 +6,14 @@ const FETCH_INTERVAL = 30_000;
 export class Map extends Chart {
     constructor(selector, params = {}) {
         super(selector, params);
-        this.apiUrl = params.apiUrl || 'https://snek.taila15010.ts.net/api/paths';
+        this.baseUrl = params.baseUrl || 'https://snek.taila15010.ts.net';
         this.vehicles = [];
+        this.stops = null;
         this.speedColors = d3.scaleLinear(
             [0, 5, 10, 20, 30, 40, 50],
             ["#636e72", "#5b8dcc", "#10a090", "#20a060", "#c07a10", "#c83020", "#a00c18"]
         ).interpolate(d3.interpolateHcl).clamp(true)
+        this.stopGroup = this.newGroup('stopGroup');
         this.vehicleGroup = this.newGroup('vehicleGroup');
         this.projection = d3.geoMercator()
 
@@ -30,10 +32,20 @@ export class Map extends Chart {
         this.init();
     }
 
+    async fetchStops() {
+        try {
+            if (!this.stops) {
+                this.stops = await d3.json(`${this.baseUrl}/api/stops`);
+                this.update()
+            }
+        } catch (e) {
+            console.error("Failed to fetch stops.", e);
+        }
+    }
+
     async fetchVehicles() {
         try {
-            this.data = await d3.json(this.apiUrl);
-            console.log(this.data)
+            this.data = await d3.json(`${this.baseUrl}/api/paths`);
             this.vehicles = this.data.features;
             this.update()
         } catch (e) {
@@ -46,6 +58,7 @@ export class Map extends Chart {
     draw() {
         this.updateVehiclePoints()
 
+        this.fetchStops()
         this.fetchVehicles();
         setInterval(() => {
             this.fetchVehicles()
@@ -54,16 +67,25 @@ export class Map extends Chart {
     }
 
     update() {
-        if (!this.data) return;
+        console.log({
+            data: this.data,
+            stops: this.stops
+        })
 
-        if (!this.resized && this.vehicles.length) {
+        this.updateProjection()
+        this.updateMetaText();
+        this.updateStops()
+        this.updateVehiclePoints()
+    }
+
+    updateProjection() {
+        if (!this.stops) return;
+
+        if (!this.resized && this.stops) {
             this.projection = this.projection
-                .fitSize([this.width, this.height], this.data)
+                .fitSize([this.width, this.height], this.stops)
             this.resized = true;
         }
-
-        this.updateMetaText();
-        this.updateVehiclePoints()
     }
 
     updateMetaText() {
@@ -71,6 +93,43 @@ export class Map extends Chart {
         if (status) {
             status.textContent = `${this.vehicles.length} vehicles · ${new Date().toLocaleTimeString()}`;
         }
+    }
+
+    updateStops() {
+        if (!this.stops) return;
+
+        this.stops.features.forEach(d => {
+            let coords = this.projection(d.geometry.coordinates)
+            d.posX = coords[0];
+            d.posY = coords[1];
+        })
+
+        this.stopGroup
+            .selectAll('g')
+            .data(this.stops.features, d => d.properties.stop_id)
+            .join(
+                enter => {
+                    const g = enter.append('g')
+                        .attr('opacity', 0)
+                        .attr('d', d => `stop-${d.properties.stop_id}`);
+
+                    g.append('circle')
+                        .attr('cx', d => d.posX)
+                        .attr('cy', d => d.posY)
+                        .attr('r', 2)
+                        .attr('stroke', 'white')
+                        .attr('stroke-width', 0.25)
+                        .attr('stroke-opacity', 0.1)
+                        .attr('fill-opacity', 0.05)
+                        .attr('fill', 'red');
+
+                    g.transition()
+                        .attr('opacity', 1);
+
+                    return g
+                }
+            )
+
     }
 
     updateVehiclePoints() {
@@ -92,8 +151,6 @@ export class Map extends Chart {
             vehicle.lastPosY = vehicle.lastPos[1];
         })
 
-        console.log(this.vehicles)
-
         this.vehicleGroup
             .selectAll('g')
             .data(this.vehicles, d => d.properties.id)
@@ -113,8 +170,8 @@ export class Map extends Chart {
                     g.append('circle')
                         .attr('cx', d => d.lastPosX)
                         .attr('cy', d => d.lastPosY)
-                        .attr('r', 2)
-                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
+                        .attr('r', 1)
+                        .attr('fill', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
 
                     g.transition().duration(750).attr('opacity', 1);
 
@@ -130,7 +187,7 @@ export class Map extends Chart {
                     t.select('circle')
                         .attr('cx', d => d.lastPosX)
                         .attr('cy', d => d.lastPosY)
-                        .attr('fill', d => this.speedColors(d.lastPoint.speedKmHr || 0));
+                        .attr('fill', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
 
                     return update;
                 },
