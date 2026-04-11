@@ -27,6 +27,10 @@ test target='tests/':
 serve:
     uv run python ./main.py
 
+# Test just the scraping
+scrape target='loop':
+    uv run python ./main.py scraper {{ target }}
+
 # Bootstrap or update the systemd service on the Raspberry Pi (run on Pi)
 install:
     sudo uv run deploy/install.py

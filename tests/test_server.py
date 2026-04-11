@@ -19,7 +19,7 @@ def client():
     mem_conn = duckdb.connect(":memory:")
     sample_data = json.loads(SAMPLE_DATA_FILE.read_text())
     sample_data["lastTime"]["time"] = str(int(time.time() * 1000))
-    vizlib.scraper.write_data(sample_data, database_connection=mem_conn)
+    vizlib.scraper.write_location_data(sample_data, database_connection=mem_conn)
 
     with patch("vizlib.db.get_write_conn", return_value=mem_conn):
         from vizlib.server import app

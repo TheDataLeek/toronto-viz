@@ -31,7 +31,7 @@ def _row_count(conn: duckdb.DuckDBPyConnection) -> int:
 
 def test_db_write():
     test_db = duckdb.connect(":memory:")
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         json.loads(SAMPLE_DATA_FILE.read_text()), database_connection=test_db
     )
     df = pl.read_database(f"SELECT * FROM {TABLE_NAME};", connection=test_db)
@@ -42,14 +42,14 @@ def test_db_write():
 
 
 def test_write_creates_table(conn):
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("1")]), database_connection=conn
     )
     assert _row_count(conn) == 1
 
 
 def test_write_appends_metadata_columns(conn):
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("1")]), database_connection=conn
     )
     df = conn.execute(f"SELECT * FROM {TABLE_NAME}").pl()
@@ -59,7 +59,9 @@ def test_write_appends_metadata_columns(conn):
 
 def test_write_multiple_vehicles(conn):
     vehicles = [_make_vehicle("1"), _make_vehicle("2"), _make_vehicle("3")]
-    vizlib.scraper.write_data(_make_payload(vehicles), database_connection=conn)
+    vizlib.scraper.write_location_data(
+        _make_payload(vehicles), database_connection=conn
+    )
     assert _row_count(conn) == 3
 
 
@@ -68,7 +70,7 @@ def test_write_multiple_vehicles(conn):
 
 def test_within_batch_dedup(conn):
     v = _make_vehicle("1")
-    vizlib.scraper.write_data(_make_payload([v, v]), database_connection=conn)
+    vizlib.scraper.write_location_data(_make_payload([v, v]), database_connection=conn)
     assert _row_count(conn) == 1
 
 
@@ -77,17 +79,17 @@ def test_within_batch_dedup(conn):
 
 def test_cross_run_same_timestamp_not_reinserted(conn):
     payload = _make_payload([_make_vehicle("1")], timestamp=1_700_000_000_000)
-    vizlib.scraper.write_data(payload, database_connection=conn)
-    vizlib.scraper.write_data(payload, database_connection=conn)
+    vizlib.scraper.write_location_data(payload, database_connection=conn)
+    vizlib.scraper.write_location_data(payload, database_connection=conn)
     assert _row_count(conn) == 1
 
 
 def test_cross_run_new_position_is_inserted(conn):
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("1", lat="43.65", lon="-79.38")]),
         database_connection=conn,
     )
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("1", lat="43.66", lon="-79.39")]),
         database_connection=conn,
     )
@@ -96,10 +98,10 @@ def test_cross_run_new_position_is_inserted(conn):
 
 def test_cross_run_different_vehicle_same_timestamp_is_inserted(conn):
     ts = 1_700_000_000_000
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("1")], timestamp=ts), database_connection=conn
     )
-    vizlib.scraper.write_data(
+    vizlib.scraper.write_location_data(
         _make_payload([_make_vehicle("2")], timestamp=ts), database_connection=conn
     )
     assert _row_count(conn) == 2

@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import re
 import sys
+import asyncio
+from typing import Literal
 
 import uvicorn
 import requests
@@ -12,8 +14,9 @@ import cyclopts
 from liquid import Environment, FileSystemLoader
 from livereload import Server
 
+import vizlib
 from vizlib import API_URL, SAMPLE_DATA_FILE
-from vizlib.server import app
+
 
 cli = cyclopts.App()
 
@@ -80,6 +83,17 @@ def fetch_sample():
     resp = requests.get(API_URL)
     data = resp.json()
     SAMPLE_DATA_FILE.write_text(json.dumps(data, indent=2))
+
+
+@cli.command()
+def scraper(target: Literal["locations", "routes", "loop"] = "loop"):
+    match target:
+        case "locations":
+            asyncio.run(vizlib.scraper.scrape_locations())
+        case "routes":
+            asyncio.run(vizlib.scraper.scrape_routes())
+        case "loop":
+            asyncio.run(vizlib.scraper.scraper_loop())
 
 
 @cli.command()

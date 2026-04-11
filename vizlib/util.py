@@ -1,7 +1,22 @@
 from typing import Any
+import contextlib
 import functools
 
+import aiohttp
 import polars as pl
+
+
+@contextlib.asynccontextmanager
+async def ensure_valid_session(session: aiohttp.ClientSession | None):
+    spawned_session = False
+    if session is None:
+        spawned_session = True
+        session: aiohttp.ClientSession = aiohttp.ClientSession()
+
+    yield session
+
+    if spawned_session:
+        await session.close()
 
 
 def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
@@ -20,14 +35,14 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
         match row:
             case {"path": points}:
                 if sort_paths_by is not None:
-                    coords = [[p["lon"], p["lat"]] for p in sorted(points, key=lambda p: p[sort_paths_by])]
+                    coords = [
+                        [p["lon"], p["lat"]]
+                        for p in sorted(points, key=lambda p: p[sort_paths_by])
+                    ]
                 else:
                     coords = [[p["lon"], p["lat"]] for p in points]
-                geometry = {
-                    "type": "LineString",
-                    "coordinates": coords
-                }
-                geojson_record['points'] = points
+                geometry = {"type": "LineString", "coordinates": coords}
+                geojson_record["points"] = points
             case {"lat": latitude, "lon": longitude}:
                 geometry = {
                     "type": "Point",

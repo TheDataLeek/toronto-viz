@@ -30,13 +30,18 @@ def fetch_paths(cutoff_seconds: float = None) -> pl.DataFrame:
 
     df = df.group_by("id").agg(
         path=pl.struct(pl.all()),
-        avgSpeedKmHr=pl.col('speedKmHr').cast(pl.Float64, strict=False).fill_null(0).mean(),
+        avgSpeedKmHr=pl.col("speedKmHr")
+        .cast(pl.Float64, strict=False)
+        .fill_null(0)
+        .mean(),
     )
 
     return df
 
 
-def _filter_df_for_recency(df: pl.DataFrame, cutoff_seconds: float = None) -> pl.DataFrame:
+def _filter_df_for_recency(
+    df: pl.DataFrame, cutoff_seconds: float = None
+) -> pl.DataFrame:
     df = df.with_columns(
         secsSinceReport=pl.col("secsSinceReport").cast(pl.Float64, strict=False),
     )
