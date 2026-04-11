@@ -5,7 +5,7 @@ const FETCH_INTERVAL = 30_000;
 
 export class Map extends Chart {
     constructor(selector, params = {}) {
-        super(selector, params);
+        super(selector, { renderer: 'canvas', ...params });
         this.baseUrl = params.baseUrl || 'https://snek.taila15010.ts.net';
         this.vehicles = [];
         this.stops = null;
@@ -13,19 +13,16 @@ export class Map extends Chart {
         this.speedColors = d3.scaleLinear(
             [0, 5, 10, 20, 30, 40, 50],
             ["#636e72", "#5b8dcc", "#10a090", "#20a060", "#c07a10", "#c83020", "#a00c18"]
-        ).interpolate(d3.interpolateHcl).clamp(true)
-        this.routeGroup = this.newGroup('routeGroup');
-        this.stopGroup = this.newGroup('stopGroup');
-        this.vehicleGroup = this.newGroup('vehicleGroup');
-        this.projection = d3.geoMercator()
+        ).interpolate(d3.interpolateHcl).clamp(true);
+        this.projection = d3.geoMercator();
+        this.currentTransform = d3.zoomIdentity;
 
-        let transform;
         this.zoom = d3.zoom().on("zoom", e => {
-            this.chart.attr("transform", (transform = e.transform));
-            this.chart.style("stroke-width", 3 / Math.sqrt(transform.k));
+            this.currentTransform = e.transform;
+            this.render();
         });
 
-        this.svg
+        this.canvas
             .call(this.zoom)
             .call(this.zoom.transform, d3.zoomIdentity);
 
@@ -38,7 +35,7 @@ export class Map extends Chart {
         try {
             if (!this.routes) {
                 this.routes = await d3.json(`${this.baseUrl}/api/routes`);
-                this.updateRoutes();
+                this.render();
             }
         } catch (e) {
             console.error("Failed to fetch routes.", e);
@@ -50,8 +47,7 @@ export class Map extends Chart {
             if (!this.stops) {
                 this.stops = await d3.json(`${this.baseUrl}/api/stops`);
                 this.updateProjection();
-                this.updateStops();
-                this.updateRoutes();
+                this.render();
             }
         } catch (e) {
             console.error("Failed to fetch stops.", e);
@@ -62,7 +58,7 @@ export class Map extends Chart {
         try {
             this.data = await d3.json(`${this.baseUrl}/api/paths`);
             this.vehicles = this.data.features;
-            this.update()
+            this.update();
         } catch (e) {
             console.error('Fetch failed:', e);
             const status = document.querySelector('#status');
@@ -71,34 +67,26 @@ export class Map extends Chart {
     }
 
     draw() {
-        this.updateVehiclePoints()
-
         this.fetchRoutes();
-        this.fetchStops()
+        this.fetchStops();
         this.fetchVehicles();
         setInterval(() => {
-            this.fetchVehicles()
-            this.update()
+            this.fetchVehicles();
         }, FETCH_INTERVAL);
     }
 
     update() {
-        console.log({
-            data: this.data,
-            stops: this.stops
-        })
-
-        this.updateProjection()
+        this.updateProjection();
         this.updateMetaText();
-        this.updateVehiclePoints()
+        this.render();
     }
 
     updateProjection() {
         if (!this.stops) return;
 
-        if (!this.resized && this.stops) {
+        if (!this.resized) {
             this.projection = this.projection
-                .fitSize([this.width, this.height], this.stops)
+                .fitSize([this.width, this.height], this.stops);
             this.resized = true;
         }
     }
@@ -113,135 +101,68 @@ export class Map extends Chart {
     resize() {
         this.resized = false;
         super.resize();
-        this.updateStops();
-        this.updateRoutes();
     }
 
-    updateRoutes() {
-        if (!this.routes || !this.resized) return;
+    render() {
+        const { ctx, width, height } = this;
+        const t = this.currentTransform;
+        const path = d3.geoPath().projection(this.projection).context(ctx);
 
-        const line = d3.line()
-            .x(d => this.projection(d)[0])
-            .y(d => this.projection(d)[1])
+        ctx.save();
+        ctx.clearRect(0, 0, width, height);
+        ctx.translate(t.x, t.y);
+        ctx.scale(t.k, t.k);
 
-        this.routes.features.forEach(route => {
-            const coords = route.geometry.coordinates || [];
-            route.lineString = line(coords);
-        });
+        // Routes
+        if (this.routes && this.resized) {
+            ctx.beginPath();
+            this.routes.features.forEach(r => path(r));
+            ctx.strokeStyle = '#888';
+            ctx.lineWidth = 0.5 / t.k;
+            ctx.globalAlpha = 0.1;
+            ctx.stroke();
+        }
 
-        this.routeGroup
-            .selectAll('path')
-            .data(this.routes.features, d => d.properties.shape_id)
-            .join(
-                enter => enter.append('path')
-                    .attr('d', d => d.lineString)
-                    .attr('fill', 'none')
-                    .attr('stroke', '#888')
-                    .attr('stroke-width', 0.5)
-                    .attr('stroke-opacity', 0.1),
-                update => update.attr('d', d => d.lineString)
-            )
-    }
+        // Stops
+        if (this.stops) {
+            ctx.lineWidth = 0.25 / t.k;
+            this.stops.features.forEach(s => {
+                const [x, y] = this.projection(s.geometry.coordinates);
+                ctx.beginPath();
+                ctx.arc(x, y, 2 / t.k, 0, 2 * Math.PI);
+                ctx.fillStyle = 'red';
+                ctx.globalAlpha = 0.05;
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.globalAlpha = 0.1;
+                ctx.stroke();
+            });
+        }
 
-    updateStops() {
-        if (!this.stops) return;
+        // Vehicles
+        if (this.vehicles.length) {
+            this.vehicles.forEach(v => {
+                const color = this.speedColors(v.properties.avgSpeedKmHr || 0);
+                const coords = v.geometry.coordinates;
 
-        this.stops.features.forEach(d => {
-            let coords = this.projection(d.geometry.coordinates)
-            d.posX = coords[0];
-            d.posY = coords[1];
-        })
+                // history path
+                ctx.beginPath();
+                path(v);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1 / t.k;
+                ctx.globalAlpha = 0.5;
+                ctx.stroke();
 
-        this.stopGroup
-            .selectAll('g')
-            .data(this.stops.features, d => d.properties.stop_id)
-            .join(
-                enter => {
-                    const g = enter.append('g')
-                        .attr('opacity', 0)
-                        .attr('d', d => `stop-${d.properties.stop_id}`);
+                // current position dot
+                const [x, y] = this.projection(coords[coords.length - 1]);
+                ctx.beginPath();
+                ctx.arc(x, y, 2 / t.k, 0, 2 * Math.PI);
+                ctx.fillStyle = color;
+                ctx.globalAlpha = 1;
+                ctx.fill();
+            });
+        }
 
-                    g.append('circle')
-                        .attr('cx', d => d.posX)
-                        .attr('cy', d => d.posY)
-                        .attr('r', 2)
-                        .attr('stroke', 'white')
-                        .attr('stroke-width', 0.25)
-                        .attr('stroke-opacity', 0.1)
-                        .attr('fill-opacity', 0.05)
-                        .attr('fill', 'red');
-
-                    g.transition()
-                        .attr('opacity', 1);
-
-                    return g
-                }
-            )
-
-    }
-
-    updateVehiclePoints() {
-        if (!this.vehicles.length) return;
-
-        const line = d3.line()
-            .x(d => this.projection(d)[0])
-            .y(d => this.projection(d)[1])
-
-        this.vehicles.forEach((vehicle) => {
-            let coords = vehicle.geometry.coordinates || [];
-            let points = vehicle.points || [];
-
-            vehicle.lineString = line(coords);
-            vehicle.lastCoords = coords[coords.length - 1];
-            vehicle.lastPoint = points[points.length - 1];
-            vehicle.lastPos = this.projection(vehicle.lastCoords) || [null, null];
-            vehicle.lastPosX = vehicle.lastPos[0];
-            vehicle.lastPosY = vehicle.lastPos[1];
-        })
-
-        this.vehicleGroup
-            .selectAll('g')
-            .data(this.vehicles, d => d.properties.id)
-            .join(
-                enter => {
-                    const g = enter.append('g')
-                        .attr('opacity', 0)
-                        .attr('id', d => `vehicle-${d.properties.id}`);
-
-                    g.append('path')
-                        .attr('d', d => d.lineString)
-                        .attr('fill', 'none')
-                        .attr('stroke-width', 1)
-                        .attr('stroke-opacity', 0.5)
-                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
-
-                    g.append('circle')
-                        .attr('cx', d => d.lastPosX)
-                        .attr('cy', d => d.lastPosY)
-                        .attr('r', 2)
-                        .attr('fill', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
-
-                    g.transition().duration(750).attr('opacity', 1);
-
-                    return g;
-                },
-                update => {
-                    const t = update.transition().duration(750);
-
-                    t.select('path')
-                        .attr('stroke', d => this.speedColors(d.properties.avgSpeedKmHr || 0))
-                        .attr('d', d => d.lineString);
-
-                    t.select('circle')
-                        .attr('cx', d => d.lastPosX)
-                        .attr('cy', d => d.lastPosY)
-                        .attr('fill', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
-
-                    return update;
-                },
-                exit => {
-                    return exit.remove()
-                }
-            )
+        ctx.restore();
     }
 }

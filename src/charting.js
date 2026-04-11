@@ -2,11 +2,8 @@ import * as d3 from 'd3';
 
 export class Chart {
     constructor(selector, params={}) {
-        // selector is just the selection string
         this.selector = selector;
-        // svg is the d3 svg element
-        this.svg = d3.select(selector).append('svg');
-        // margins are the empty space outside the chart
+        this.renderer = params.renderer || 'svg';
         this.margin = params.margin || {
             top: 0,
             bottom: 0,
@@ -14,8 +11,13 @@ export class Chart {
             right: 0,
         };
 
-        // chart is the main group that we use for everything
-        this.chart = this.svg.append('g');
+        if (this.renderer === 'canvas') {
+            this.canvas = d3.select(selector).append('canvas');
+            this.ctx = this.canvas.node().getContext('2d');
+        } else {
+            this.svg = d3.select(selector).append('svg');
+            this.chart = this.svg.append('g');
+        }
     }
 
     get selected() {
@@ -50,12 +52,18 @@ export class Chart {
         this.width = this.containerWidth - this.margin.left - this.margin.right;
         this.height = this.containerHeight - this.margin.top - this.margin.bottom;
 
-        this.svg
-            .attr('width', this.containerWidth)
-            .attr('height', this.containerHeight);
+        if (this.renderer === 'canvas') {
+            this.canvas
+                .attr('width', this.containerWidth)
+                .attr('height', this.containerHeight);
+        } else {
+            this.svg
+                .attr('width', this.containerWidth)
+                .attr('height', this.containerHeight);
 
-        this.chart
-            .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
+            this.chart
+                .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
+        }
 
         this.update()
     }
@@ -72,5 +80,3 @@ export class Chart {
         }
     }
 }
-
-
