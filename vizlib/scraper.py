@@ -10,7 +10,7 @@ import polars as pl
 from loguru import logger
 
 from . import API_URL, SCRAPE_INTERVAL
-from .db import get_write_conn
+from .db import get_write_conn, load_spatial
 from .util import ensure_valid_session
 
 TABLE_NAME = "vehicles"
@@ -31,7 +31,6 @@ async def scraper_loop():
                 logger.error(f"Route scrape failed: {exc}")
             try:
                 last_time = await scrape_locations(session, last_time)
-                logger.info("Scraped successfully")
             except Exception as exc:
                 logger.error(f"Scrape failed: {exc}")
             await asyncio.sleep(SCRAPE_INTERVAL)
@@ -49,11 +48,10 @@ async def scrape_locations(
             resp.raise_for_status()
             data = await resp.json()
             vehicle_count = len(data.get("vehicle", []))
-            logger.debug(f"Fetched {vehicle_count} vehicles (t={last_time})")
             write_location_data(data, get_write_conn())
 
     new_time = data["lastTime"]["time"]
-    logger.debug(f"New lastTime: {new_time}")
+    logger.debug(f"Fetched {vehicle_count} vehicles (t={last_time} → {new_time})")
     return new_time
 
 
@@ -63,6 +61,8 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
     base_url = "https://ckan0.cf.opendata.inter.prod-toronto.ca"
     ttc_routes_and_schedules_endpoint = f"{base_url}/api/3/action/package_show"
     params = {"id": "ttc-routes-and-schedules"}
+
+    conn = get_write_conn()
 
     async with ensure_valid_session(session) as valid_session:
         async with valid_session.get(
@@ -91,7 +91,6 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
 
                 files = zip_data.namelist()
                 logger.info(f"Zip contains {len(files)} files: {files}")
-                conn = get_write_conn()
                 for name in files:
                     table_name = f"ttc_{name.split('.')[0]}"
                     with zip_data.open(name, mode="r") as obj:
@@ -99,9 +98,57 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
                     logger.info(f"Writing {len(df)} rows to table {table_name}")
                     conn.register("_df", df)
                     conn.execute(
-                        f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM _df"
+                        f"""
+                            CREATE OR REPLACE TABLE {table_name} AS
+                            SELECT * FROM _df
+                        """
                     )
                     logger.debug(f"Table {table_name} created/replaced successfully")
+
+    load_spatial()
+
+    logger.info("Building derived stops and routes tables...")
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TABLE stops AS (
+            SELECT
+                stop_id
+                ,stop_code
+                ,stop_name
+                ,stop_desc
+                ,stop_lat
+                ,stop_lon
+                ,zone_id
+                ,stop_url
+                ,location_type
+                ,parent_station
+                ,stop_timezone
+                ,wheelchair_boarding
+                , CAST(
+                    'POINT(' || CAST(stop_lon AS STRING) || ' ' || CAST(stop_lat AS STRING) || ')'
+                  AS GEOMETRY) AS coords
+            FROM ttc_stops
+        );
+        """
+    )
+    logger.debug("stops table created")
+
+    conn.execute(
+        f"""
+        CREATE OR REPLACE TABLE routes AS (
+            SELECT
+                shape_id
+                , CAST('LINESTRING(' || ARRAY_TO_STRING(
+                    LIST(
+                        CAST(shape_pt_lon AS STRING) || ' ' || CAST(shape_pt_lat AS STRING)
+                        ORDER BY shape_pt_sequence
+                    ), ', ') || ')'  AS GEOMETRY) as shape
+            FROM ttc_shapes
+            GROUP BY shape_id
+        );
+        """
+    )
+    logger.info("Route scrape complete: stops and routes tables updated")
 
 
 def write_location_data(
@@ -118,13 +165,23 @@ def write_location_data(
     )
     conn.register("_df", df)
     conn.execute(
-        f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} AS SELECT * FROM _df WHERE FALSE"
+        f"""
+            CREATE TABLE IF NOT EXISTS {TABLE_NAME} AS
+            SELECT * FROM _df
+        """
     )
-    conn.execute(f"""
+    result = conn.execute(f"""
         INSERT INTO {TABLE_NAME}
         SELECT DISTINCT * FROM _df d
         WHERE NOT EXISTS (
             SELECT 1 FROM {TABLE_NAME} v
             WHERE v.id = d.id AND v.lat = d.lat AND v.lon = d.lon
         )
+        RETURNING 1
     """)
+    inserted = len(result.fetchall())
+    skipped = len(df) - inserted
+    logger.info(
+        f"Wrote location data: {inserted} new rows inserted, {skipped} duplicates skipped"
+        f" (api_timestamp={vehicle_api_timestamp.isoformat()})"
+    )
