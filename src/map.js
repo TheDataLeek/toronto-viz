@@ -9,10 +9,12 @@ export class Map extends Chart {
         this.baseUrl = params.baseUrl || 'https://snek.taila15010.ts.net';
         this.vehicles = [];
         this.stops = null;
+        this.routes = null;
         this.speedColors = d3.scaleLinear(
             [0, 5, 10, 20, 30, 40, 50],
             ["#636e72", "#5b8dcc", "#10a090", "#20a060", "#c07a10", "#c83020", "#a00c18"]
         ).interpolate(d3.interpolateHcl).clamp(true)
+        this.routeGroup = this.newGroup('routeGroup');
         this.stopGroup = this.newGroup('stopGroup');
         this.vehicleGroup = this.newGroup('vehicleGroup');
         this.projection = d3.geoMercator()
@@ -32,11 +34,24 @@ export class Map extends Chart {
         this.init();
     }
 
+    async fetchRoutes() {
+        try {
+            if (!this.routes) {
+                this.routes = await d3.json(`${this.baseUrl}/api/routes`);
+                this.updateRoutes();
+            }
+        } catch (e) {
+            console.error("Failed to fetch routes.", e);
+        }
+    }
+
     async fetchStops() {
         try {
             if (!this.stops) {
                 this.stops = await d3.json(`${this.baseUrl}/api/stops`);
-                this.update()
+                this.updateProjection();
+                this.updateStops();
+                this.updateRoutes();
             }
         } catch (e) {
             console.error("Failed to fetch stops.", e);
@@ -58,6 +73,7 @@ export class Map extends Chart {
     draw() {
         this.updateVehiclePoints()
 
+        this.fetchRoutes();
         this.fetchStops()
         this.fetchVehicles();
         setInterval(() => {
@@ -74,7 +90,6 @@ export class Map extends Chart {
 
         this.updateProjection()
         this.updateMetaText();
-        this.updateStops()
         this.updateVehiclePoints()
     }
 
@@ -93,6 +108,39 @@ export class Map extends Chart {
         if (status) {
             status.textContent = `${this.vehicles.length} vehicles · ${new Date().toLocaleTimeString()}`;
         }
+    }
+
+    resize() {
+        this.resized = false;
+        super.resize();
+        this.updateStops();
+        this.updateRoutes();
+    }
+
+    updateRoutes() {
+        if (!this.routes || !this.resized) return;
+
+        const line = d3.line()
+            .x(d => this.projection(d)[0])
+            .y(d => this.projection(d)[1])
+
+        this.routes.features.forEach(route => {
+            const coords = route.geometry.coordinates || [];
+            route.lineString = line(coords);
+        });
+
+        this.routeGroup
+            .selectAll('path')
+            .data(this.routes.features, d => d.properties.shape_id)
+            .join(
+                enter => enter.append('path')
+                    .attr('d', d => d.lineString)
+                    .attr('fill', 'none')
+                    .attr('stroke', '#888')
+                    .attr('stroke-width', 0.5)
+                    .attr('stroke-opacity', 0.1),
+                update => update.attr('d', d => d.lineString)
+            )
     }
 
     updateStops() {
@@ -170,7 +218,7 @@ export class Map extends Chart {
                     g.append('circle')
                         .attr('cx', d => d.lastPosX)
                         .attr('cy', d => d.lastPosY)
-                        .attr('r', 1)
+                        .attr('r', 2)
                         .attr('fill', d => this.speedColors(d.properties.avgSpeedKmHr || 0));
 
                     g.transition().duration(750).attr('opacity', 1);

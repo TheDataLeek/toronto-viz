@@ -33,3 +33,10 @@ async def api_paths(request: Request, seconds: int = 5 * 60):
 async def api_stops(request: Request):
     df = data.fetch_stops()
     return to_geojson(df)
+
+
+@router.get('/api/routes')
+@limiter.limit("30/minute")
+async def api_routes(request: Request):
+    df = data.fetch_routes()
+    return to_geojson(df)

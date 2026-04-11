@@ -1,6 +1,7 @@
 from typing import Any
 import contextlib
 import functools
+import json
 
 import aiohttp
 import polars as pl
@@ -28,7 +29,7 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
         geojson_record = {
             "type": "Feature",
             "properties": {
-                k: v for k, v in row.items() if k not in ["path", "lat", "lon", 'coords']
+                k: v for k, v in row.items() if k not in ["path", "lat", "lon", 'coords', 'shape']
             },
         }
         geometry = None
@@ -53,6 +54,8 @@ def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
                     "type": "Point",
                     "coordinates": coords,
                 }
+            case {'shape': shape_geojson}:
+                geometry = json.loads(shape_geojson)
 
         if geometry is not None:
             geojson_record["geometry"] = geometry

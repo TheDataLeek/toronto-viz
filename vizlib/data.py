@@ -18,6 +18,11 @@ def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
 
     return df
 
+def fetch_routes() -> pl.DataFrame:
+    load_spatial()
+    return query_database("SELECT shape_id, ST_AsGeoJSON(shape) AS shape FROM routes")
+
+
 def fetch_stops() -> pl.DataFrame:
     load_spatial()
     df = query_database(
