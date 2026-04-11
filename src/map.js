@@ -148,12 +148,20 @@ export class Map extends Chart {
     }
 
     render() {
-        const { ctx, width, height } = this;
+        const { ctx } = this;
         const t = this.currentTransform;
         const path = d3.geoPath().projection(this.projection).context(ctx);
+        const canvasNode = this.canvas?.node();
+        const canvasWidth = canvasNode?.width ?? this.containerWidth;
+        const canvasHeight = canvasNode?.height ?? this.containerHeight;
 
         ctx.save();
-        ctx.clearRect(0, 0, width, height);
+        // Clear the entire backing store before applying the zoom transform.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.beginPath();
+        ctx.rect(0, 0, canvasWidth, canvasHeight);
+        ctx.clip();
         ctx.translate(t.x, t.y);
         ctx.scale(t.k, t.k);
 
