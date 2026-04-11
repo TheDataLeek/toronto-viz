@@ -241,7 +241,7 @@ export class Map extends Chart {
         const stride = this.getStopStride(scale);
         if (!Number.isFinite(stride) || !this.stopPoints.length) return;
 
-        const radius = 2 / scale;
+        const radius = 5 / scale;
         ctx.beginPath();
         for (let i = 0; i < this.stopPoints.length; i += stride) {
             const [x, y] = this.stopPoints[i];
@@ -299,7 +299,7 @@ export class Map extends Chart {
 
                 const [x, y] = vehicle.point;
                 ctx.beginPath();
-                ctx.arc(x, y, 2 / t.k, 0, 2 * Math.PI);
+                ctx.arc(x, y, 3 / t.k, 0, 2 * Math.PI);
                 ctx.fillStyle = vehicle.color;
                 ctx.globalAlpha = 1;
                 ctx.fill();
