@@ -18,8 +18,17 @@ TABLE_NAME = "vehicles"
 
 async def scraper_loop():
     last_time = "0"
+    last_routes_scrape: datetime.datetime | None = None
     async with aiohttp.ClientSession() as session:
         while True:
+            try:
+                now = datetime.datetime.now()
+                if (last_routes_scrape is None) or ((now - last_routes_scrape) >= datetime.timedelta(hours=24)):
+                    logger.info("Scraping routes...")
+                    await scrape_routes(session)
+                    last_routes_scrape = now
+            except Exception as exc:
+                logger.error(f"Route scrape failed: {exc}")
             try:
                 last_time = await scrape_locations(session, last_time)
                 logger.info("Scraped successfully")
