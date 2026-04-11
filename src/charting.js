@@ -13,11 +13,22 @@ export class Chart {
 
         if (this.renderer === 'canvas') {
             this.canvas = d3.select(selector).append('canvas');
-            this.ctx = this.canvas.node().getContext('2d');
+            this.ctx = this.canvas.node().getContext('2d', {
+                desynchronized: true,
+            }) || this.canvas.node().getContext('2d');
         } else {
             this.svg = d3.select(selector).append('svg');
             this.chart = this.svg.append('g');
         }
+
+        this.resizeFrame = null;
+        this.handleResize = () => {
+            if (this.resizeFrame !== null) return;
+            this.resizeFrame = requestAnimationFrame(() => {
+                this.resizeFrame = null;
+                this.resize();
+            });
+        };
     }
 
     get selected() {
@@ -30,9 +41,7 @@ export class Chart {
         // and then initial draw for elements
         this.draw();
         // and on resize, redraw
-        window.addEventListener('resize', () => {
-            this.resize();
-        });
+        window.addEventListener('resize', this.handleResize);
     }
 
     draw() {
