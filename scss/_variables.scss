@@ -1,0 +1,20 @@
+:root {
+  // Layout
+  --loader-size: 50vmin;
+
+  // Core UI palette
+  --color-bg:         #111827;
+  --color-text-muted: #6b7280;
+
+  // Map layer colors (read by canvas drawing code via src/theme.js)
+  --color-routes:       #888888;
+  --color-stops-fill:   #94a3b8;
+  --color-stops-stroke: #cbd5e1;
+
+  // Vehicle speed scale endpoints (JS interpolates between these)
+  --color-speed-0:  #c0392b;
+  --color-speed-5:  #e67e22;
+  --color-speed-15: #f1c40f;
+  --color-speed-30: #27ae60;
+  --color-speed-50: #1abc9c;
+}

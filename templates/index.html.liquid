@@ -4,60 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TTC Vehicle Tracker</title>
-<style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #111827; overflow: hidden; }
-        #map { width: 100vw; height: 100vh; overflow: hidden; }
-        #map canvas,
-        #map svg { display: block; }
-        #status {
-            position: fixed;
-            bottom: 1rem;
-            left: 1rem;
-            font-size: 0.8rem;
-            color: #6b7280;
-            font-family: monospace;
-        }
-        #map {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .loader {
-          width: 120px;
-          height: 120px;
-          display: inline-block;
-          position: relative;
-        }
-        .loader::after,
-        .loader::before {
-          content: '';
-          box-sizing: border-box;
-          width: 120px;
-          height: 120px;
-          border-radius: 50%;
-          border: 2px solid #FFF;
-          position: absolute;
-          left: 0;
-          top: 0;
-          animation: animloader 2s linear infinite;
-        }
-        .loader::after {
-          animation-delay: 1s;
-        }
-
-        @keyframes animloader {
-          0% {
-            transform: scale(0);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 0;
-          }
-        }
-
-    </style>
+    <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
     <div id="map">

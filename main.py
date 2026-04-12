@@ -27,6 +27,10 @@ PROD_API_URL = "https://snek.taila15010.ts.net"
 DEV_API_URL = "http://127.0.0.1:5000"
 
 
+def bundle_css() -> None:
+    subprocess.run(["npm", "run", "build:css"], check=True)
+
+
 def bundle() -> None:
     subprocess.run(
         [
@@ -70,11 +74,13 @@ def render(environment: str = "dev") -> None:
 def dev(*, port: int = 3000) -> None:
     """Start dev server with livereload (bundled JS)."""
     DIST.mkdir(exist_ok=True)
+    bundle_css()
     bundle()
     render()
     server = Server()
     server.watch("templates/index.html.liquid", render)
     server.watch("src/*.js", bundle)
+    server.watch("scss/*.scss", bundle_css)
     server.serve(root="./dist/", port=port, open_url_delay=None)
 
 

@@ -1,11 +1,11 @@
 import * as d3 from 'd3';
 import {Chart} from './charting.js';
 import {fetchJSON} from './data'
+import {buildTheme} from './theme.js';
 
 const FETCH_INTERVAL = 30_000;
 const MIN_STOP_ZOOM = 1.25;
 const INTERACTION_STOP_ZOOM = 4;
-const MAP_BACKGROUND = '#111827';
 
 export class Map extends Chart {
     /**
@@ -29,6 +29,7 @@ export class Map extends Chart {
      * {@link Chart#init}.
      */
     setupMap() {
+        this.theme = buildTheme();
         this.vehicles = this.data['ttc:paths'];
         this.stops = this.data['ttc:stops'];
         this.routes = this.data['ttc:routes']
@@ -37,7 +38,7 @@ export class Map extends Chart {
         this.routePath = null;
         this.speedColors = d3.scaleLinear(
             [0, 5, 15, 30, 50],
-            ["#c0392b", "#e67e22", "#f1c40f", "#27ae60", "#1abc9c"]
+            this.theme.speedScale
         ).interpolate(d3.interpolateHcl).clamp(true);
         this.projection = d3.geoMercator();
         this.pathGenerator = d3.geoPath().projection(this.projection);
@@ -75,6 +76,7 @@ export class Map extends Chart {
             .then(d => {
                 if (!d) throw new Error('fetch returned empty response');
                 this.vehicles = d.data;
+                console.log(this.vehicles);
                 this.update();
             })
             .catch(e => {
@@ -180,6 +182,7 @@ export class Map extends Chart {
             return {
                 color: this.speedColors(v.properties.avgSpeedKmHr || 0),
                 history: new Path2D(historyPath),
+                lastHeading: v.properties.lastHeading,
                 point,
             };
         }).filter(Boolean);
@@ -225,10 +228,10 @@ export class Map extends Chart {
             ctx.moveTo(x + radius, y);
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
         }
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = this.theme.stopsFill;
         ctx.globalAlpha = 0.15;
         ctx.fill();
-        ctx.strokeStyle = '#cbd5e1';
+        ctx.strokeStyle = this.theme.stopsStroke;
         ctx.lineWidth = 0.5 / scale;
         ctx.globalAlpha = 0.35;
         ctx.stroke();
@@ -237,9 +240,7 @@ export class Map extends Chart {
 
     /**
      * Paints one frame: clears the canvas, then draws routes, stops, and
-     * vehicles in layer order. Vehicle history trails are suppressed during
-     * pan/zoom gestures below `INTERACTION_STOP_ZOOM` to keep interaction
-     * smooth. Always called via {@link scheduleRender}, never directly.
+     * vehicles in layer order. Always called via {@link scheduleRender}, never directly.
      */
     render() {
         const {ctx} = this;
@@ -250,45 +251,60 @@ export class Map extends Chart {
 
         ctx.save();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = MAP_BACKGROUND;
+        ctx.fillStyle = this.theme.bg;
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         ctx.translate(t.x, t.y);
         ctx.scale(t.k, t.k);
 
-        // Routes
-        if (this.routePath) {
-            ctx.beginPath();
-            ctx.strokeStyle = '#888';
-            ctx.lineWidth = 0.5 / t.k;
-            ctx.globalAlpha = 0.1;
-            ctx.stroke(this.routePath);
-            ctx.globalAlpha = 1;
-        }
-
-        // Stops
+        this.renderRoutes(ctx, t.k);
         this.renderStops(ctx, t.k);
-
-        // Vehicles
-        if (this.vehicleGeometry.length) {
-            const drawHistory = !this.isInteracting || t.k >= INTERACTION_STOP_ZOOM;
-
-            this.vehicleGeometry.forEach(vehicle => {
-                if (drawHistory) {
-                    ctx.strokeStyle = vehicle.color;
-                    ctx.lineWidth = 1 / t.k;
-                    ctx.globalAlpha = 0.5;
-                    ctx.stroke(vehicle.history);
-                }
-
-                const [x, y] = vehicle.point;
-                ctx.beginPath();
-                ctx.arc(x, y, 3 / t.k, 0, 2 * Math.PI);
-                ctx.fillStyle = vehicle.color;
-                ctx.globalAlpha = 1;
-                ctx.fill();
-            });
-        }
+        this.renderVehicles(ctx, t.k);
 
         ctx.restore();
     }
+
+    /**
+     * Draws the transit route network onto the canvas.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} scale - Current zoom scale (`transform.k`)
+     */
+    renderRoutes(ctx, scale) {
+        if (!this.routePath) return;
+
+        ctx.beginPath();
+        ctx.strokeStyle = this.theme.routes;
+        ctx.lineWidth = 0.5 / scale;
+        ctx.globalAlpha = 0.1;
+        ctx.stroke(this.routePath);
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Draws vehicles and their history trails onto the canvas. History trails
+     * are suppressed during pan/zoom gestures below `INTERACTION_STOP_ZOOM`.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} scale - Current zoom scale (`transform.k`)
+     */
+    renderVehicles(ctx, scale) {
+        if (!this.vehicleGeometry.length) return;
+
+        const drawHistory = !this.isInteracting || scale >= INTERACTION_STOP_ZOOM;
+
+        this.vehicleGeometry.forEach(vehicle => {
+            if (drawHistory) {
+                ctx.strokeStyle = vehicle.color;
+                ctx.lineWidth = 1 / scale;
+                ctx.globalAlpha = 0.5;
+                ctx.stroke(vehicle.history);
+            }
+
+            const [x, y] = vehicle.point;
+            ctx.beginPath();
+            ctx.arc(x, y, 3 / scale, 0, 2 * Math.PI);
+            ctx.fillStyle = vehicle.color;
+            ctx.globalAlpha = 1;
+            ctx.fill();
+        });
+    }
+
 }
