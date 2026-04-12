@@ -1,3 +1,22 @@
+#footer-links {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  font-size: 0.8rem;
+  font-family: monospace;
+  display: flex;
+  gap: 1rem;
+
+  a {
+    color: var(--color-text-muted);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--color-stops-fill);
+    }
+  }
+}
+
 #status {
   position: fixed;
   bottom: 1rem;
