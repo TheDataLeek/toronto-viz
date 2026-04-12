@@ -11,6 +11,8 @@ export class Chart {
             right: 0,
         };
 
+        d3.select(selector).html('');
+
         if (this.renderer === 'canvas') {
             this.canvas = d3.select(selector).append('canvas');
             this.ctx = this.canvas.node().getContext('2d', {

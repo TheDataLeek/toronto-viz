@@ -1,49 +1,43 @@
 import * as d3 from 'd3';
 import {Chart} from './charting.js';
+import {fetchJSON} from './data'
 
 const FETCH_INTERVAL = 30_000;
-const ONE_DAY_MS = 86_400_000;
 const MIN_STOP_ZOOM = 1.25;
 const INTERACTION_STOP_ZOOM = 4;
 const MAP_BACKGROUND = '#111827';
 
-function cacheGet(key) {
-    try {
-        const raw = localStorage.getItem(key);
-        if (!raw) return null;
-        return JSON.parse(raw);
-    } catch { return null; }
-}
-
-function cacheSet(key, value, ttlMs = null) {
-    try {
-        localStorage.setItem(key, JSON.stringify({
-            ts: Date.now(),
-            ttl: ttlMs,
-            data: value,
-        }));
-    } catch { /* storage full — silently skip */ }
-}
-
-function cacheFresh(entry) {
-    if (!entry) return false;
-    if (entry.ttl == null) return true;
-    return (Date.now() - entry.ts) < entry.ttl;
-}
-
 export class Map extends Chart {
+    /**
+     * @param {string} selector - CSS selector for the container element
+     * @param {object} params
+     * @param {string} [params.baseUrl] - Base URL for API requests
+     * @param {object} params.data - Pre-fetched GeoJSON keyed by 'ttc:paths', 'ttc:stops', 'ttc:routes'
+     * @param {object} [params.margin] - Chart margins ({ top, bottom, left, right })
+     */
     constructor(selector, params = {}) {
-        super(selector, { renderer: 'canvas', ...params });
+        super(selector, {renderer: 'canvas', ...params});
         this.baseUrl = params.baseUrl || 'https://snek.taila15010.ts.net';
-        this.vehicles = [];
-        this.stops = null;
-        this.routes = null;
+        this.data = params.data;
+        this.setupMap()
+        this.init();
+    }
+
+    /**
+     * Initializes map state, scales, projection, zoom behaviour, and attaches
+     * the zoom handler to the canvas. Called once from the constructor before
+     * {@link Chart#init}.
+     */
+    setupMap() {
+        this.vehicles = this.data['ttc:paths'];
+        this.stops = this.data['ttc:stops'];
+        this.routes = this.data['ttc:routes']
         this.stopPoints = [];
         this.vehicleGeometry = [];
         this.routePath = null;
         this.speedColors = d3.scaleLinear(
-            [0, 5, 10, 20, 30, 40, 50],
-            ["#636e72", "#5b8dcc", "#10a090", "#20a060", "#c07a10", "#c83020", "#a00c18"]
+            [0, 5, 15, 30, 50],
+            ["#c0392b", "#e67e22", "#f1c40f", "#27ae60", "#1abc9c"]
         ).interpolate(d3.interpolateHcl).clamp(true);
         this.projection = d3.geoMercator();
         this.pathGenerator = d3.geoPath().projection(this.projection);
@@ -68,77 +62,33 @@ export class Map extends Chart {
         this.canvas
             .call(this.zoom)
             .call(this.zoom.transform, d3.zoomIdentity);
-
-        this.resized = false;
-
-        this.init();
     }
 
-    async fetchRoutes() {
-        try {
-            if (!this.routes) {
-                const cached = cacheGet('ttc:routes');
-                if (cacheFresh(cached)) {
-                    this.routes = cached.data;
-                } else {
-                    this.routes = await d3.json(`${this.baseUrl}/api/routes`);
-                    cacheSet('ttc:routes', this.routes, ONE_DAY_MS);
-                }
-                this.updateRoutePath();
-                this.scheduleRender();
-            }
-        } catch (e) {
-            console.error("Failed to fetch routes.", e);
-        }
-    }
-
-    async fetchStops() {
-        try {
-            if (!this.stops) {
-                const cached = cacheGet('ttc:stops');
-                if (cacheFresh(cached)) {
-                    this.stops = cached.data;
-                } else {
-                    this.stops = await d3.json(`${this.baseUrl}/api/stops`);
-                    cacheSet('ttc:stops', this.stops, ONE_DAY_MS);
-                }
-                this.updateProjection();
-                this.scheduleRender();
-            }
-        } catch (e) {
-            console.error("Failed to fetch stops.", e);
-        }
-    }
-
-    async fetchVehicles() {
-        try {
-            this.data = await d3.json(`${this.baseUrl}/api/paths`);
-            this.vehicles = this.data.features;
-            cacheSet('ttc:vehicles', this.data);
-            this.update();
-        } catch (e) {
-            console.error('Fetch failed:', e);
-            const status = document.querySelector('#status');
-            if (status) status.textContent = 'Fetch failed · retrying in 60s';
-        }
-    }
-
+    /**
+     * Starts the periodic vehicle-location poll. Called once by {@link Chart#init}
+     * after the initial resize/update cycle. Fires every {@link FETCH_INTERVAL} ms,
+     * bypassing the local cache so each tick gets fresh data.
+     */
     draw() {
-        const cachedVehicles = cacheGet('ttc:vehicles');
-        if (cachedVehicles) {
-            this.data = cachedVehicles.data;
-            this.vehicles = this.data.features;
-            this.updateVehicleGeometry();
-        }
-
-        this.fetchRoutes();
-        this.fetchStops();
-        this.fetchVehicles();
         setInterval(() => {
-            this.fetchVehicles();
+            fetchJSON(`${this.baseUrl}/api/paths`, 'ttc:paths', true)
+            .then(d => {
+                if (!d) throw new Error('fetch returned empty response');
+                this.vehicles = d.data;
+                this.update();
+            })
+            .catch(e => {
+                console.error('Fetch failed:', e);
+                const status = document.querySelector('#status');
+                if (status) status.textContent = `Fetch failed · retrying in ${FETCH_INTERVAL / 1000}s`;
+            })
         }, FETCH_INTERVAL);
     }
 
+    /**
+     * Full refresh: recomputes the projection, status text, and vehicle geometry,
+     * then queues a canvas redraw. Called after each data fetch and on resize.
+     */
     update() {
         this.updateProjection();
         this.updateMetaText();
@@ -146,34 +96,37 @@ export class Map extends Chart {
         this.scheduleRender();
     }
 
+    /**
+     * Fits the Mercator projection to the current canvas dimensions using the
+     * stops GeoJSON as the bounding reference, then recomputes stop screen
+     * coordinates, route paths, and vehicle geometry. Sets `this.resized = true`
+     * so downstream geometry methods know the projection is ready.
+     */
     updateProjection() {
-        if (!this.stops) return;
-
-        if (!this.resized) {
-            this.projection = this.projection
-                .fitSize([this.width, this.height], this.stops);
-            this.pathGenerator.projection(this.projection);
-            this.stopPoints = this.stops.features
-                .map(s => this.projection(s.geometry.coordinates))
-                .filter(Boolean);
-            this.resized = true;
-            this.updateRoutePath();
-            this.updateVehicleGeometry();
-        }
+        this.projection = this.projection
+            .fitSize([this.width, this.height], this.stops);
+        this.pathGenerator.projection(this.projection);
+        this.stopPoints = this.stops.features
+            .map(s => this.projection(s.geometry.coordinates))
+            .filter(Boolean);
+        this.resized = true;
+        this.updateRoutePath();
+        this.updateVehicleGeometry();
     }
 
+    /** Updates the `#status` element with the current vehicle count and timestamp. */
     updateMetaText() {
         const status = document.querySelector('#status');
         if (status) {
-            status.textContent = `${this.vehicles.length} vehicles · ${new Date().toLocaleTimeString()}`;
+            status.textContent = `${this.vehicles.features.length} vehicles · ${new Date().toLocaleTimeString()}`;
         }
     }
 
-    resize() {
-        this.resized = false;
-        super.resize();
-    }
-
+    /**
+     * Coalesces multiple synchronous render requests into a single
+     * `requestAnimationFrame` call. Safe to call repeatedly; only the first
+     * call per frame has any effect.
+     */
     scheduleRender() {
         if (this.renderQueued) return;
         this.renderQueued = true;
@@ -184,6 +137,11 @@ export class Map extends Chart {
         });
     }
 
+    /**
+     * Rebuilds `this.routePath` as a single composite `Path2D` from all route
+     * features. Clears the path if routes are unavailable or the projection
+     * hasn't been fitted yet.
+     */
     updateRoutePath() {
         if (!this.routes || !this.resized) {
             this.routePath = null;
@@ -200,13 +158,18 @@ export class Map extends Chart {
         this.routePath = routePath;
     }
 
+    /**
+     * Projects each vehicle's path history and current position into screen
+     * space, caching the results in `this.vehicleGeometry` for use by
+     * {@link render}. No-ops until the projection has been fitted (`this.resized`).
+     */
     updateVehicleGeometry() {
-        if (!this.resized || !this.vehicles.length) {
+        if (!this.resized || !this.vehicles) {
             this.vehicleGeometry = [];
             return;
         }
 
-        this.vehicleGeometry = this.vehicles.map(v => {
+        this.vehicleGeometry = this.vehicles.features.map(v => {
             const coords = v.geometry.coordinates;
             const lastCoord = coords?.[coords.length - 1];
             const point = lastCoord ? this.projection(lastCoord) : null;
@@ -222,6 +185,13 @@ export class Map extends Chart {
         }).filter(Boolean);
     }
 
+    /**
+     * Returns the index stride for thinning stop rendering at low zoom levels.
+     * Returns `Infinity` (skip all stops) below `MIN_STOP_ZOOM`, and triples
+     * the stride during active pan/zoom gestures to reduce canvas work.
+     * @param {number} scale - Current zoom scale (`transform.k`)
+     * @returns {number} Stride value; `Infinity` means don't render stops at all
+     */
     getStopStride(scale) {
         if (scale < MIN_STOP_ZOOM) return Infinity;
 
@@ -237,6 +207,13 @@ export class Map extends Chart {
         return stride;
     }
 
+    /**
+     * Draws transit stops onto the canvas at the current zoom level, using
+     * stride-based thinning (via {@link getStopStride}) to skip stops when
+     * zoomed out or mid-gesture.
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} scale - Current zoom scale (`transform.k`)
+     */
     renderStops(ctx, scale) {
         const stride = this.getStopStride(scale);
         if (!Number.isFinite(stride) || !this.stopPoints.length) return;
@@ -248,18 +225,24 @@ export class Map extends Chart {
             ctx.moveTo(x + radius, y);
             ctx.arc(x, y, radius, 0, 2 * Math.PI);
         }
-        ctx.fillStyle = 'red';
-        ctx.globalAlpha = 0.05;
+        ctx.fillStyle = '#94a3b8';
+        ctx.globalAlpha = 0.15;
         ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 0.25 / scale;
-        ctx.globalAlpha = 0.1;
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 0.5 / scale;
+        ctx.globalAlpha = 0.35;
         ctx.stroke();
         ctx.globalAlpha = 1;
     }
 
+    /**
+     * Paints one frame: clears the canvas, then draws routes, stops, and
+     * vehicles in layer order. Vehicle history trails are suppressed during
+     * pan/zoom gestures below `INTERACTION_STOP_ZOOM` to keep interaction
+     * smooth. Always called via {@link scheduleRender}, never directly.
+     */
     render() {
-        const { ctx } = this;
+        const {ctx} = this;
         const t = this.currentTransform;
         const canvasNode = this.canvas?.node();
         const canvasWidth = canvasNode?.width ?? this.containerWidth;
