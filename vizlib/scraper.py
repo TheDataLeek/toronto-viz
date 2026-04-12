@@ -62,7 +62,7 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
     # https://docs.ckan.org/en/latest/api/
     base_url = "https://ckan0.cf.opendata.inter.prod-toronto.ca"
     ttc_routes_and_schedules_endpoint = f"{base_url}/api/3/action/package_show"
-    params = {"id": "ttc-routes-and-schedules"}
+    params = {"id": "merged-gtfs-ttc-routes-and-schedules"}
 
     conn = get_write_conn()
 
@@ -106,6 +106,8 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
                         """
                     )
                     logger.debug(f"Table {table_name} created/replaced successfully")
+                # just fetch the first thing
+                break
 
     build_derived_route_tables()
 
