@@ -10,7 +10,7 @@ import polars as pl
 from loguru import logger
 
 from . import API_URL, SCRAPE_INTERVAL
-from .db import get_write_conn, load_spatial
+from .db import get_write_conn, load_spatial, build_derived_route_tables
 from .util import ensure_valid_session
 
 TABLE_NAME = "vehicles"
@@ -105,48 +105,7 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
                     )
                     logger.debug(f"Table {table_name} created/replaced successfully")
 
-    load_spatial()
-
-    logger.info("Building derived stops and routes tables...")
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TABLE stops AS (
-            SELECT
-                stop_id
-                ,stop_code
-                ,stop_name
-                ,stop_desc
-                ,zone_id
-                ,stop_url
-                ,location_type
-                ,parent_station
-                ,stop_timezone
-                ,wheelchair_boarding
-                , CAST(
-                    'POINT(' || CAST(stop_lon AS STRING) || ' ' || CAST(stop_lat AS STRING) || ')'
-                  AS GEOMETRY) AS coords
-            FROM ttc_stops
-        );
-        """
-    )
-    logger.debug("stops table created")
-
-    conn.execute(
-        f"""
-        CREATE OR REPLACE TABLE routes AS (
-            SELECT
-                shape_id
-                , CAST('LINESTRING(' || ARRAY_TO_STRING(
-                    LIST(
-                        CAST(shape_pt_lon AS STRING) || ' ' || CAST(shape_pt_lat AS STRING)
-                        ORDER BY shape_pt_sequence
-                    ), ', ') || ')'  AS GEOMETRY) as shape
-            FROM ttc_shapes
-            GROUP BY shape_id
-        );
-        """
-    )
-    logger.info("Route scrape complete: stops and routes tables updated")
+    build_derived_route_tables()
 
 
 def write_location_data(

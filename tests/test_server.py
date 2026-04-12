@@ -1,28 +1,19 @@
-import json
-import time
+import asyncio
 from unittest.mock import patch
 
-import duckdb
-import polars as pl
 import pytest
 from fastapi.testclient import TestClient
 
-import vizlib.scraper
-from vizlib import SAMPLE_DATA_FILE
+async def _noop_scraper_loop():
+    await asyncio.sleep(0)
 
 
 @pytest.fixture
-def client():
-    """
-    E2E fixture: populates an in-memory DuckDB with sample data, patches the
-    server to use it instead of the on-disk DB, and suppresses the scraper.
-    """
-    mem_conn = duckdb.connect(":memory:")
-    sample_data = json.loads(SAMPLE_DATA_FILE.read_text())
-    sample_data["lastTime"]["time"] = str(int(time.time() * 1000))
-    vizlib.scraper.write_location_data(sample_data, database_connection=mem_conn)
-
-    with patch("vizlib.db.get_write_conn", return_value=mem_conn):
+def client(test_db):
+    with (
+        patch("vizlib.db.get_write_conn", return_value=test_db),
+        patch("vizlib.server.scraper_loop", _noop_scraper_loop),
+    ):
         from vizlib.server import app
 
         yield TestClient(app)
@@ -52,6 +43,8 @@ def test_api_data_vehicle_shape(client):
     assert "id" in props
     assert "routeTag" in props
     assert "api_timestamp" in props
+    assert "lat" not in props
+    assert "lon" not in props
 
 
 def test_api_data_deduped(client):
@@ -80,14 +73,7 @@ def test_api_paths_returns_linestrings(client):
 
 
 def test_api_stops_returns_point_features(client):
-    stops_df = pl.DataFrame(
-        {
-            "stop_id": ["1001", "1002"],
-            "coords": [[-79.383, 43.653], [-79.400, 43.670]],
-        }
-    )
-    with patch("vizlib.data.fetch_stops", return_value=stops_df):
-        resp = client.get("/api/stops")
+    resp = client.get("/api/stops")
     assert resp.status_code == 200
     fc = resp.json()
     assert fc["type"] == "FeatureCollection"

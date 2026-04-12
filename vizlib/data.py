@@ -9,7 +9,10 @@ def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
     df = query_database(
         """
             SELECT
-              *
+              * EXCLUDE (lat, lon)
+              , ST_AsGeoJSON(
+                    ST_POINT(CAST(lon AS DOUBLE), CAST(lat AS DOUBLE))
+                ) AS geometry
             FROM vehicles
             QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY api_timestamp DESC) = 1
             """,
@@ -20,7 +23,9 @@ def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
 
 def fetch_routes() -> pl.DataFrame:
     load_spatial()
-    return query_database("SELECT shape_id, ST_AsGeoJSON(shape) AS shape FROM routes")
+    return query_database(
+        "SELECT shape_id, ST_AsGeoJSON(shape) AS geometry FROM routes"
+    )
 
 
 def fetch_stops() -> pl.DataFrame:
@@ -29,7 +34,7 @@ def fetch_stops() -> pl.DataFrame:
         """
         SELECT
           stop_id
-          , [ST_X(coords), ST_Y(coords)] AS coords
+          , ST_AsGeoJSON(coords) AS geometry
         FROM stops
         """
     )
@@ -38,27 +43,43 @@ def fetch_stops() -> pl.DataFrame:
 
 
 def fetch_paths(cutoff_seconds: float = None) -> pl.DataFrame:
-    df = query_database(
-        """
-        SELECT *
-        FROM vehicles
-        """,
-    )
-    df = _filter_df_for_recency(df, cutoff_seconds)
+    load_spatial()
 
-    df = df.group_by("id").agg(
-        path=pl.struct(pl.all()),
-        avgSpeedKmHr=pl.col("speedKmHr")
-        .cast(pl.Float64, strict=False)
-        .fill_null(0)
-        .mean(),
-    )
+    query = """
+        SELECT
+          id
+          , ST_AsGeoJSON(
+                ST_MAKELINE(
+                    LIST(
+                        ST_POINT(
+                            CAST(lon AS DOUBLE),
+                            CAST(lat AS DOUBLE)
+                        ) ORDER BY api_timestamp
+                    )
+                )
+            ) AS geometry
+          , AVG(CAST(speedKmHr AS DOUBLE)) AS avgSpeedKmHr
+        FROM vehicles
+        """
+    params = []
+
+    if cutoff_seconds is not None:
+        query += """
+        WHERE api_timestamp >= current_localtimestamp() - (? * INTERVAL '1 second')
+        """
+        params.append(cutoff_seconds)
+
+    query += """
+        GROUP BY id
+    """
+
+    df = query_database(query, params)
 
     return df
 
 
 def _filter_df_for_recency(
-    df: pl.DataFrame, cutoff_seconds: float = None
+    df: pl.DataFrame, cutoff_seconds: float = None,
 ) -> pl.DataFrame:
     df = df.with_columns(
         secsSinceReport=pl.col("secsSinceReport").cast(pl.Float64, strict=False),

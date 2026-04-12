@@ -1,6 +1,5 @@
 from typing import Any
 import contextlib
-import functools
 import json
 
 import aiohttp
@@ -20,46 +19,24 @@ async def ensure_valid_session(session: aiohttp.ClientSession | None):
         await session.close()
 
 
-def to_geojson(data: pl.DataFrame = None, sort_paths_by: str = None) -> dict:
+def to_geojson(data: pl.DataFrame = None) -> dict:
     if (data is None) or (len(data) == 0):
         return {"type": "FeatureCollection", "features": []}
 
     features = []
     for row in data.to_dicts():
+        geometry = row.get("geometry")
+        if geometry is None:
+            continue
+
         geojson_record = {
             "type": "Feature",
             "properties": {
-                k: v for k, v in row.items() if k not in ["path", "lat", "lon", 'coords', 'shape']
+                k: v for k, v in row.items() if k != "geometry"
             },
+            "geometry": json.loads(geometry),
         }
-        geometry = None
-        match row:
-            case {"path": points}:
-                if sort_paths_by is not None:
-                    coords = [
-                        [p["lon"], p["lat"]]
-                        for p in sorted(points, key=lambda p: p[sort_paths_by])
-                    ]
-                else:
-                    coords = [[p["lon"], p["lat"]] for p in points]
-                geometry = {"type": "LineString", "coordinates": coords}
-                geojson_record["points"] = points
-            case {"lat": latitude, "lon": longitude}:
-                geometry = {
-                    "type": "Point",
-                    "coordinates": [longitude, latitude],
-                }
-            case {'coords': coords}:
-                geometry = {
-                    "type": "Point",
-                    "coordinates": coords,
-                }
-            case {'shape': shape_geojson}:
-                geometry = json.loads(shape_geojson)
-
-        if geometry is not None:
-            geojson_record["geometry"] = geometry
-            features.append(geojson_record)
+        features.append(geojson_record)
 
     return {
         "type": "FeatureCollection",
