@@ -6,7 +6,7 @@ LOAD json;
 WITH features AS (
     SELECT CAST({
         type: 'Feature',
-        geometry: ST_AsGeoJSON(shape),
+        geometry: ST_AsGeoJSON(ST_Simplify(shape, 0.0001)),
         properties: {
             shape_id: shape_id
         }
