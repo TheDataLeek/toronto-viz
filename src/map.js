@@ -45,6 +45,7 @@ export class Map extends Chart {
         this.currentTransform = d3.zoomIdentity;
         this.isInteracting = false;
         this.renderQueued = false;
+        this.initialZoomDone = false;
 
         this.zoom = d3.zoom()
             .on("start", () => {
@@ -114,6 +115,27 @@ export class Map extends Chart {
         this.resized = true;
         this.updateRoutePath();
         this.updateVehicleGeometry();
+        // if (!this.initialZoomDone) {
+        //     this.zoomToUnionStation();
+        // }
+    }
+
+    /**
+     * Fires once after the projection is first fitted. Transitions the viewport
+     * to Union Station (43°38′40″N 79°22′49″W) over 750 ms at zoom level 4.
+     */
+    zoomToUnionStation() {
+        this.initialZoomDone = true;
+        const UNION_STATION = [-79.38028, 43.64444];
+        const k = 2;
+        const [px, py] = this.projection(UNION_STATION);
+        const transform = d3.zoomIdentity
+            .translate(this.width / 2 - k * px, this.height / 2 - k * py)
+            .scale(k);
+        this.canvas
+            .transition()
+            .duration(750)
+            .call(this.zoom.transform, transform);
     }
 
     /** Updates the `#status` element with the current vehicle count and timestamp. */
@@ -166,7 +188,7 @@ export class Map extends Chart {
      * {@link render}. No-ops until the projection has been fitted (`this.resized`).
      */
     updateVehicleGeometry() {
-        if (!this.resized || !this.vehicles) {
+        if (!this.resized || !this.vehicles || !this.vehicles.features) {
             this.vehicleGeometry = [];
             return;
         }
