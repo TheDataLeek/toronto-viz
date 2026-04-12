@@ -23,6 +23,9 @@ def to_geojson(data: pl.DataFrame = None) -> dict:
     if (data is None) or (len(data) == 0):
         return {"type": "FeatureCollection", "features": []}
 
+    if "geojson" in data.columns and len(data) == 1:
+        return json.loads(data["geojson"][0])
+
     features = []
     for row in data.to_dicts():
         geometry = row.get("geometry")
