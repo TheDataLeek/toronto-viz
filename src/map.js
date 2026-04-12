@@ -299,11 +299,26 @@ export class Map extends Chart {
             }
 
             const [x, y] = vehicle.point;
-            ctx.beginPath();
-            ctx.arc(x, y, 3 / scale, 0, 2 * Math.PI);
             ctx.fillStyle = vehicle.color;
             ctx.globalAlpha = 1;
-            ctx.fill();
+
+            if (vehicle.lastHeading == null) {
+                ctx.beginPath();
+                ctx.arc(x, y, 3 / scale, 0, 2 * Math.PI);
+                ctx.fill();
+            } else {
+                const size = 2.5 / scale;
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(vehicle.lastHeading * Math.PI / 180);
+                ctx.beginPath();
+                ctx.moveTo(0, -size * 1.8);   // tip (forward)
+                ctx.lineTo(-size, size);       // back-left
+                ctx.lineTo(size, size);        // back-right
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
         });
     }
 
