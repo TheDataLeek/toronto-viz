@@ -14,25 +14,6 @@ def test_fetching_paths(test_db):
     assert result["id"].sort().to_list() == ["veh-1", "veh-2"]
 
 
-def test_filter_df_for_recency_excludes_old_api_timestamps():
-    now = datetime.datetime.now()
-    df = pl.DataFrame(
-        {
-            "id": ["a", "b", "c"],
-            "secsSinceReport": ["10", "10", "10"],
-            "api_timestamp": [
-                now - datetime.timedelta(seconds=5),
-                now - datetime.timedelta(seconds=30),
-                now - datetime.timedelta(seconds=120),
-            ],
-        }
-    )
-
-    result = vizlib.data._filter_df_for_recency(df, cutoff_seconds=60)
-
-    assert result["id"].to_list() == ["a", "b"]
-
-
 def test_fetch_paths_only_groups_recent_points(test_db):
     with patch("vizlib.db.get_write_conn", return_value=test_db):
         result = vizlib.data.fetch_paths(cutoff_seconds=60)

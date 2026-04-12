@@ -6,6 +6,9 @@ from .db import query_database, load_spatial
 
 
 def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
+    if cutoff_seconds is None:
+        cutoff_seconds = 60 * 60 * 24
+
     df = query_database(
         """
             SELECT
@@ -14,18 +17,18 @@ def fetch_locations(cutoff_seconds: float = None) -> pl.DataFrame:
                     ST_POINT(CAST(lon AS DOUBLE), CAST(lat AS DOUBLE))
                 ) AS geometry
             FROM vehicles
+            WHERE api_timestamp >= current_localtimestamp() - (? * INTERVAL '1 second')
             QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY api_timestamp DESC) = 1
             """,
+        [cutoff_seconds]
     )
-    df = _filter_df_for_recency(df, cutoff_seconds)
 
     return df
 
 def fetch_routes() -> pl.DataFrame:
     load_spatial()
-    return query_database(
-        "SELECT shape_id, ST_AsGeoJSON(shape) AS geometry FROM routes"
-    )
+    df = query_database("SELECT shape_id, ST_AsGeoJSON(shape) AS geometry FROM routes")
+    return df
 
 
 def fetch_stops() -> pl.DataFrame:
@@ -45,55 +48,33 @@ def fetch_stops() -> pl.DataFrame:
 def fetch_paths(cutoff_seconds: float = None) -> pl.DataFrame:
     load_spatial()
 
+    if cutoff_seconds is None:
+        cutoff_seconds = 60 * 60 * 24
+
     query = """
+        WITH base AS (
+          SELECT
+            id
+          , LIST(
+              ST_POINT(
+                CAST(lon AS DOUBLE),
+                CAST(lat AS DOUBLE)
+              ) ORDER BY api_timestamp
+            ) AS point_list
+          , AVG(CAST(speedKmHr AS DOUBLE)) AS avgSpeedKmHr
+          FROM vehicles
+          WHERE api_timestamp >= current_localtimestamp() - (? * INTERVAL '1 second')
+          GROUP BY id
+        )
         SELECT
           id
-          , ST_AsGeoJSON(
-                ST_MAKELINE(
-                    LIST(
-                        ST_POINT(
-                            CAST(lon AS DOUBLE),
-                            CAST(lat AS DOUBLE)
-                        ) ORDER BY api_timestamp
-                    )
-                )
-            ) AS geometry
-          , AVG(CAST(speedKmHr AS DOUBLE)) AS avgSpeedKmHr
-        FROM vehicles
-        """
-    params = []
-
-    if cutoff_seconds is not None:
-        query += """
-        WHERE api_timestamp >= current_localtimestamp() - (? * INTERVAL '1 second')
-        """
-        params.append(cutoff_seconds)
-
-    query += """
-        GROUP BY id
+          , ST_AsGeoJSON(ST_MAKELINE(point_list)) AS geometry
+          , avgSpeedKmHr
+        FROM base
+        WHERE length(point_list) > 1
     """
 
-    df = query_database(query, params)
+    df = query_database(query, [cutoff_seconds])
 
     return df
 
-
-def _filter_df_for_recency(
-    df: pl.DataFrame, cutoff_seconds: float = None,
-) -> pl.DataFrame:
-    df = df.with_columns(
-        secsSinceReport=pl.col("secsSinceReport").cast(pl.Float64, strict=False),
-    )
-
-    if cutoff_seconds is None:
-        return df
-
-    cutoff_time = datetime.datetime.now() - datetime.timedelta(seconds=cutoff_seconds)
-
-    df = df.filter(
-        pl.col("secsSinceReport").is_not_null()
-        & (pl.col("secsSinceReport") < cutoff_seconds)
-        & (pl.col("api_timestamp") >= pl.lit(cutoff_time))
-    )
-
-    return df
