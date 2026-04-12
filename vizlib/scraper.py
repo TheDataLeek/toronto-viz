@@ -10,7 +10,7 @@ import polars as pl
 from loguru import logger
 
 from . import API_URL, SCRAPE_INTERVAL
-from .db import get_write_conn, load_spatial, build_derived_route_tables
+from .db import get_write_conn, load_spatial, build_derived_route_tables, checkpoint
 from .util import ensure_valid_session
 
 TABLE_NAME = "vehicles"
@@ -19,6 +19,7 @@ TABLE_NAME = "vehicles"
 async def scraper_loop():
     last_time = "0"
     last_routes_scrape: datetime.datetime | None = None
+    last_checkpoint: datetime.datetime | None = None
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -31,6 +32,15 @@ async def scraper_loop():
                     last_routes_scrape = now
             except Exception as exc:
                 logger.error(f"Route scrape failed: {exc}")
+            try:
+                now = datetime.datetime.now()
+                if (last_checkpoint is None) or (
+                    (now - last_checkpoint) >= datetime.timedelta(hours=1)
+                ):
+                    checkpoint()
+                    last_checkpoint = now
+            except Exception as exc:
+                logger.error(f"Checkpoint failed: {exc}")
             try:
                 last_time = await scrape_locations(session, last_time)
             except Exception as exc:

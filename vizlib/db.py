@@ -39,6 +39,11 @@ def load_spatial(conn: duckdb.DuckDBPyConnection | None = None):
         conn.execute("LOAD spatial")
 
 
+def checkpoint() -> None:
+    get_write_conn().execute("CHECKPOINT")
+    logger.debug("WAL checkpointed")
+
+
 def build_derived_route_tables(conn: duckdb.DuckDBPyConnection | None = None):
     if conn is None:
         conn: duckdb.DuckDBPyConnection = get_write_conn()
