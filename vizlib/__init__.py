@@ -8,5 +8,6 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = DATA_DIR / "backend.db"
 SAMPLE_DATA_FILE = DATA_DIR / "sample_data.json"
+SQL_DIR = Path(__file__).parent / "sql"
 
-from . import data, db, routes, scraper, server, util
+from . import db, routes, scraper, server, util

@@ -31,9 +31,7 @@ def to_geojson(data: pl.DataFrame = None) -> dict:
 
         geojson_record = {
             "type": "Feature",
-            "properties": {
-                k: v for k, v in row.items() if k != "geometry"
-            },
+            "properties": {k: v for k, v in row.items() if k != "geometry"},
             "geometry": json.loads(geometry),
         }
         features.append(geojson_record)

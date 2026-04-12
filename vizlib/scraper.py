@@ -23,7 +23,9 @@ async def scraper_loop():
         while True:
             try:
                 now = datetime.datetime.now()
-                if (last_routes_scrape is None) or ((now - last_routes_scrape) >= datetime.timedelta(hours=24)):
+                if (last_routes_scrape is None) or (
+                    (now - last_routes_scrape) >= datetime.timedelta(hours=24)
+                ):
                     logger.info("Scraping routes...")
                     await scrape_routes(session)
                     last_routes_scrape = now

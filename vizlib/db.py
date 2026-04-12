@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import polars as pl
 import duckdb
 from loguru import logger
@@ -14,7 +16,10 @@ def get_write_conn() -> duckdb.DuckDBPyConnection:
     return _write_conn
 
 
-def query_database(query: str, *args, **kwargs) -> pl.DataFrame:
+def query_database(query: str | Path, *args, **kwargs) -> pl.DataFrame:
+    if isinstance(query, Path):
+        query = query.read_text()
+
     rows = pl.DataFrame()
     try:
         rows = get_write_conn().execute(query, *args, **kwargs).pl()

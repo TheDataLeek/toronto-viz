@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+
 async def _noop_scraper_loop():
     await asyncio.sleep(0)
 
