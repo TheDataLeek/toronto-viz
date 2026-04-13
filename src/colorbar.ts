@@ -1,26 +1,26 @@
 import * as d3 from 'd3';
-import { buildTheme } from './theme.js';
-import { Chart } from './charting.js';
+import { buildTheme } from './theme';
+import { Chart } from './charting';
+import type { Theme } from './types';
 
 export class Colorbar extends Chart {
-    constructor(selector, params = {}) {
+    private barHeight = 12;
+    private tickLen   = 4;
+    private labelPad  = 6;
+    private theme: Theme;
+    private stops: number[];
+
+    constructor(selector: string, params: { margin?: { top?: number; bottom?: number; left?: number; right?: number } } = {}) {
         super(selector, params);
 
-        this.barHeight = 12;
-        this.tickLen   = 4;
-        this.labelPad  = 6;
-        this.titlePad  = 10;
-
         this.theme = buildTheme();
-
         this.stops = [0, 5, 15, 30, 50];
 
-        this.buildGradient()
-
+        this.buildGradient();
         this.init();
     }
 
-    buildGradient() {
+    private buildGradient(): void {
         const grad = this.defs
             .append('linearGradient')
             .attr('id', 'speed-gradient')
@@ -34,15 +34,11 @@ export class Colorbar extends Chart {
         );
     }
 
-    draw() {
-        this.tickScale = d3.scaleLinear(
+    override draw(): void {
+        const tickScale = d3.scaleLinear(
             [this.stops[0], this.stops[this.stops.length - 1]],
             [0, this.width],
         );
-
-        // Offset group so title has room above bar
-        // this.newGroup('bar')
-            // .attr('transform', `translate(0, ${titlePad})`);
 
         this.newGroup('title')
             .append('text')
@@ -66,9 +62,9 @@ export class Colorbar extends Chart {
             .data(this.stops)
             .join(
                 enter => {
-                    let g = enter.append('g')
+                    const g = enter.append('g')
                         .attr('id', s => `colorBarTick-${s}`)
-                        .attr('transform', s => `translate(${this.tickScale(s)}, 0)`);
+                        .attr('transform', s => `translate(${tickScale(s)}, 0)`);
 
                     g.append('line')
                         .attr('x1', 0)
@@ -90,8 +86,6 @@ export class Colorbar extends Chart {
 
                     return g;
                 },
-            )
+            );
     }
-
-
 }

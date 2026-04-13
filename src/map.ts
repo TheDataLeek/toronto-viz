@@ -1,8 +1,16 @@
 import * as d3 from 'd3';
 import Konva from 'konva';
-import { Chart } from './charting.js';
-import { fetchJSON } from './data';
-import { buildTheme } from './theme.js';
+import { Chart } from './charting';
+import { buildTheme } from './theme';
+import type { Theme, MapData, PathProperties, FeatureCollection, LineString, Point } from './types';
+
+// d3.GeoPath has a `this` context type constraint on its call signature that
+// conflicts with class method context. This interface exposes only what we
+// need (call + projection setter) without that constraint.
+interface GeoPathFn {
+    (obj: d3.GeoPermissibleObjects): string | null;
+    projection(proj: d3.GeoProjection | null): this;
+}
 
 const MIN_STOP_ZOOM = 1.25;
 const INTERACTION_STOP_ZOOM = 4;
@@ -12,6 +20,17 @@ const MAX_SCALE = 20;
 const STOP_RADIUS = 2;   // screen pixels
 const MARKER_RADIUS = 3; // screen pixels (dot)
 const ARROW_SIZE = 2.5;  // screen pixels (triangle half-width)
+
+interface VehicleGeometry {
+    trail: Konva.Path;
+    marker: Konva.Circle | Konva.Line;
+}
+
+interface MapParams {
+    data: MapData;
+    margin?: { top?: number; bottom?: number; left?: number; right?: number };
+    baseUrl?: string;
+}
 
 /**
  * TTC vehicle map. Renders three Konva canvas layers (routes, stops, vehicles)
@@ -60,13 +79,26 @@ const ARROW_SIZE = 2.5;  // screen pixels (triangle half-width)
  * this to vehicle markers; stops compute it live inside their sceneFunc.
  */
 export class Map extends Chart {
-    /**
-     * @param {string} selector - CSS selector for the container element
-     * @param {object} params
-     * @param {object} params.data - Pre-fetched GeoJSON keyed by 'ttc:paths', 'ttc:stops', 'ttc:routes'
-     * @param {object} [params.margin] - Chart margins ({ top, bottom, left, right })
-     */
-    constructor(selector, params = {}) {
+    private data: MapData;
+    private theme!: Theme;
+    private vehicles!: FeatureCollection<LineString, PathProperties>;
+    private stops!: FeatureCollection<Point>;
+    private routes!: FeatureCollection<LineString>;
+    private vehicleGeometry: VehicleGeometry[] = [];
+    private stopCoords: [number, number][] = [];
+    private _zoomFrame: number | null = null;
+    private _pendingScale = 1;
+    private _lastWidth?: number;
+    private _lastHeight?: number;
+    private isInteracting = false;
+    private projection!: d3.GeoProjection;
+    private pathGenerator!: GeoPathFn;
+    private zoom!: d3.ZoomBehavior<SVGSVGElement, unknown>;
+    private routesLayer!: Konva.Layer;
+    private stopsLayer!: Konva.Layer;
+    private vehiclesLayer!: Konva.Layer;
+
+    constructor(selector: string, params: MapParams) {
         super(selector, params);
         this.data = params.data;
         // setupMap() must run before init() so that layers exist when
@@ -80,20 +112,14 @@ export class Map extends Chart {
      * Initializes map state, projection, layers, and native zoom/pan handlers.
      * Called once from the constructor before {@link Chart#init}.
      */
-    setupMap() {
+    private setupMap(): void {
         this.theme = buildTheme();
         this.vehicles = this.data['ttc:paths'];
         this.stops = this.data['ttc:stops'];
         this.routes = this.data['ttc:routes'];
 
-        this.vehicleGeometry = [];
-        this.stopCoords = [];      // projected [x,y] pairs — rebuilt only on resize
-        this._zoomFrame = null;    // pending RAF handle for batched zoom work
-        this._pendingScale = 1;    // latest k value waiting for that RAF
-        this.isInteracting = false;
-
         this.projection = d3.geoMercator();
-        this.pathGenerator = d3.geoPath().projection(this.projection);
+        this.pathGenerator = d3.geoPath().projection(this.projection) as unknown as GeoPathFn;
 
         // Three layers: routes (static), stops (stride-thinned), vehicles (live).
         // listening(false) on each layer disables Konva's hit canvas, saving
@@ -101,30 +127,33 @@ export class Map extends Chart {
         // Side effect: each stage.add() + .listening(false) call queues a
         // Konva batchDraw RAF internally; the compositor-flush RAF in
         // Chart.init() handles making those visible (see Chart class comment).
-        this.newLayer('routesLayer').listening(false);
-        this.newLayer('stopsLayer').listening(false);
-        this.newLayer('vehiclesLayer').listening(false);
+        this.routesLayer = this.newLayer();
+        this.routesLayer.listening(false);
+        this.stopsLayer = this.newLayer();
+        this.stopsLayer.listening(false);
+        this.vehiclesLayer = this.newLayer();
+        this.vehiclesLayer.listening(false);
 
         this.setupMapControls();
     }
 
-    setupMapControls() {
-        this.zoom = d3.zoom()
+    private setupMapControls(): void {
+        this.zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([MIN_SCALE, MAX_SCALE])
             // One ZOOM_FACTOR step per wheel tick, matching the old Konva handler.
-            .wheelDelta(event => (event.deltaY < 0 ? 1 : -1) * Math.log(ZOOM_FACTOR))
-            .on('start', (event) => {
+            .wheelDelta((event: WheelEvent) => (event.deltaY < 0 ? 1 : -1) * Math.log(ZOOM_FACTOR))
+            .on('start', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
                 this.isInteracting = true;
                 // Hide trails during drag at low zoom — reduces canvas work when
                 // thousands of path segments are being repainted every frame.
                 // Wheel events skip this: they complete in one tick with no drag frames.
-                const isDrag = event.sourceEvent?.type !== 'wheel';
+                const isDrag = (event.sourceEvent as Event | null)?.type !== 'wheel';
                 if (isDrag && this.stage.scaleX() < INTERACTION_STOP_ZOOM) {
                     this.vehicleGeometry.forEach(({ trail }) => trail.visible(false));
                     this.vehiclesLayer.batchDraw();
                 }
             })
-            .on('zoom', (event) => {
+            .on('zoom', (event: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
                 const { k, x, y } = event.transform;
                 // CSS transform: cheap, update every event for smooth motion.
                 this.stage.scale({ x: k, y: k });
@@ -157,11 +186,11 @@ export class Map extends Chart {
         // Enable pointer events on the SVG overlay so D3 zoom captures wheel
         // and drag gestures for both the canvas and SVG layers.
         this.svg.style('pointer-events', 'all');
-        this.svg.call(this.zoom);
+        (this.svg as unknown as d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>).call(this.zoom);
     }
 
-    draw() {
-        this.update()
+    override draw(): void {
+        this.update();
     }
 
     /**
@@ -179,7 +208,7 @@ export class Map extends Chart {
      * be deduplicated into the pending RAF from setupMap() and might not fire
      * before the compositor-flush RAF in Chart.init() runs).
      */
-    update(vehicleData) {
+    override update(vehicleData?: FeatureCollection<LineString, PathProperties>): void {
         if (vehicleData) this.vehicles = vehicleData;
 
         const w = this.containerWidth, h = this.containerHeight;
@@ -202,14 +231,14 @@ export class Map extends Chart {
      * Re-applies the current D3 zoom transform to the SVG after the refit,
      * since Chart.resize() resets this.chart's transform to margin-only.
      */
-    updateProjection() {
+    private updateProjection(): void {
         this.projection = this.projection.fitExtent(
             [[this.margin.left, this.margin.top],
              [this.containerWidth - this.margin.right, this.containerHeight - this.margin.bottom]],
-            this.stops
+            this.stops,
         );
         this.pathGenerator.projection(this.projection);
-        const t = d3.zoomTransform(this.svg.node());
+        const t = d3.zoomTransform(this.svg.node()!);
         this.syncSVGZoom(t.k, t.x, t.y);
     }
 
@@ -218,7 +247,7 @@ export class Map extends Chart {
      * becomes a Konva.Path node. strokeScaleEnabled(false) keeps lines at a
      * constant screen-pixel width regardless of zoom. Called only on resize.
      */
-    updateRoutes() {
+    private updateRoutes(): void {
         if (!this.routes) return;
 
         this.routesLayer.destroyChildren();
@@ -233,7 +262,7 @@ export class Map extends Chart {
                 opacity: 0.1,
                 listening: false,
                 perfectDrawEnabled: false,
-                fill: null,
+                fill: undefined,
             }));
         });
     }
@@ -243,7 +272,7 @@ export class Map extends Chart {
      * trail, one Konva.Circle or Konva.Line (closed triangle) per vehicle
      * position. No-ops until the projection has been fitted.
      */
-    updateVehicleGeometry() {
+    private updateVehicleGeometry(): void {
         if (!this.vehicles?.features) {
             this.vehicleGeometry = [];
             return;
@@ -255,12 +284,12 @@ export class Map extends Chart {
 
         this.vehicles.features.forEach(v => {
             const coords = v.geometry.coordinates;
-            const lastCoord = coords?.[coords.length - 1];
+            const lastCoord = coords[coords.length - 1] as [number, number] | undefined;
             const point = lastCoord ? this.projection(lastCoord) : null;
             const trailData = this.pathGenerator(v);
             if (!point || !trailData) return;
 
-            const color = this.theme.speedColorScale(v.properties.avgSpeedKmHr || 0);
+            const color = this.theme.speedColorScale(v.properties?.avgSpeedKmHr ?? 0);
             const [x, y] = point;
 
             const trail = new Konva.Path({
@@ -271,12 +300,12 @@ export class Map extends Chart {
                 opacity: 0.5,
                 listening: false,
                 perfectDrawEnabled: false,
-                fill: null,
+                fill: undefined,
             });
             this.vehiclesLayer.add(trail);
 
-            let marker;
-            if (v.properties.lastHeading != null) {
+            let marker: Konva.Circle | Konva.Line;
+            if (v.properties?.lastHeading != null) {
                 const s = ARROW_SIZE / scale;
                 marker = new Konva.Line({
                     x,
@@ -309,38 +338,42 @@ export class Map extends Chart {
      * Drives the D3 zoom behavior with a transition so the zoom event fires
      * each frame, keeping both the Konva stage and SVG layer in sync.
      */
-    zoomToCoords(longitude, latitude) {
-        const [px, py] = this.projection([longitude, latitude]);
+    zoomToCoords(longitude: number, latitude: number): void {
+        const proj = this.projection([longitude, latitude]);
+        if (!proj) return;
+        const [px, py] = proj;
         const k = 2;
         const targetX = this.width / 2 - k * px;
         const targetY = this.height / 2 - k * py;
-        this.svg.transition().duration(750)
+        (this.svg as unknown as d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>)
+            .transition().duration(750)
             .call(this.zoom.transform, d3.zoomIdentity.translate(targetX, targetY).scale(k));
     }
 
     /**
-     * On mobile viewports (≤768px wide), applies an initial zoom centered on
+     * On mobile viewports (≤1000px wide), applies an initial zoom centered on
      * downtown Toronto so the opening view shows the core transit area rather
      * than the full system extent. No-ops on wider screens.
      */
-    _applyInitialMobileZoom() {
+    private _applyInitialMobileZoom(): void {
         if (!window.matchMedia('(max-width: 1000px)').matches) return;
-        const [px, py] = this.projection([-79.38, 43.65]);
+        const proj = this.projection([-79.38, 43.65]);
+        if (!proj) return;
+        const [px, py] = proj;
         const k = 1.5;
         const tx = this.containerWidth / 2 - k * px;
         const ty = this.containerHeight / 2 - k * py;
-        this.svg.call(
+        (this.svg as unknown as d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>).call(
             this.zoom.transform,
-            d3.zoomIdentity.translate(tx, ty).scale(k)
+            d3.zoomIdentity.translate(tx, ty).scale(k),
         );
     }
 
     /**
      * Returns the stop-rendering stride for the current zoom scale.
      * Higher stride = fewer stops shown. Returns Infinity below MIN_STOP_ZOOM.
-     * @param {number} scale - Current stage scaleX
      */
-    getStopStride(scale) {
+    private getStopStride(scale: number): number {
         if (scale < MIN_STOP_ZOOM) return Infinity;
         let stride = 1;
         if (scale < 2) stride = 12;
@@ -357,16 +390,16 @@ export class Map extends Chart {
      * are needed — a plain batchDraw() is sufficient to trigger a repaint.
      * Called only on resize.
      */
-    _buildStopShapes() {
+    private _buildStopShapes(): void {
         this.stopCoords = this.stops.features
-            .map(s => this.projection(s.geometry.coordinates))
-            .filter(Boolean);
+            .map(s => this.projection(s.geometry.coordinates as [number, number]))
+            .filter((c): c is [number, number] => c !== null);
 
         this.stopsLayer.destroyChildren();
         this.stopsLayer.add(new Konva.Shape({
             fill: this.theme.stopsFill,
             opacity: 0.25,
-            sceneFunc: (ctx, shape) => {
+            sceneFunc: (ctx: Konva.Context, shape: Konva.Shape) => {
                 const scale = this.stage.scaleX();
                 const stride = this.getStopStride(scale);
                 if (!Number.isFinite(stride)) return;
@@ -388,7 +421,7 @@ export class Map extends Chart {
      * Triggers a repaint of the stops layer. The sceneFunc reads the current
      * scale and stride live, so no shape properties need to be updated first.
      */
-    _updateStopVisibility() {
+    private _updateStopVisibility(): void {
         this.stopsLayer.batchDraw();
     }
 
@@ -396,9 +429,8 @@ export class Map extends Chart {
      * Updates vehicle marker sizes so they remain constant in screen pixels as
      * the stage scale changes. Stop sizes are handled inside the sceneFunc and
      * need no explicit update here. Called from the zoom RAF and on zoom end.
-     * @param {number} scale - Current stage scaleX
      */
-    _rescaleShapes(scale) {
+    private _rescaleShapes(scale: number): void {
         this.vehicleGeometry.forEach(({ marker }) => {
             if (marker instanceof Konva.Circle) {
                 marker.radius(MARKER_RADIUS / scale);

@@ -1,5 +1,6 @@
 import * as d3 from 'd3';
 import Konva from "konva";
+import type { Margins } from './types';
 
 /**
  * Base class for all charts. Every instance creates two absolutely-positioned
@@ -50,11 +51,24 @@ import Konva from "konva";
  * externally-triggered redraw (user zoom, data refresh interval, etc.).
  */
 export class Chart {
-    constructor(selector, params = {}) {
-        this.selector = selector;
-        this.margin = params.margin || { top: 0, bottom: 0, left: 0, right: 0 };
+    protected selector: string;
+    protected margin: Margins;
+    protected stage: Konva.Stage;
+    protected svg: d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>;
+    protected defs: d3.Selection<SVGDefsElement, unknown, d3.BaseType, unknown>;
+    protected chart: d3.Selection<SVGGElement, unknown, d3.BaseType, unknown>;
+    protected containerWidth!: number;
+    protected containerHeight!: number;
+    protected width!: number;
+    protected height!: number;
+    private resizeFrame: number | null = null;
+    private handleResize: () => void;
 
-        const container = document.querySelector(selector);
+    constructor(selector: string, params: { margin?: Partial<Margins> } = {}) {
+        this.selector = selector;
+        this.margin = { top: 0, bottom: 0, left: 0, right: 0, ...params.margin };
+
+        const container = document.querySelector(selector) as HTMLElement;
         container.innerHTML = '';
         container.style.position = 'relative';
 
@@ -80,9 +94,9 @@ export class Chart {
 
         this.svg = d3.select(svgDiv).append('svg')
             .attr('width', container.clientWidth)
-            .attr('height', container.clientHeight);
+            .attr('height', container.clientHeight) as unknown as d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>;
 
-        this.defs = this.svg.append('defs');
+        this.defs = this.svg.append('defs') as unknown as d3.Selection<SVGDefsElement, unknown, d3.BaseType, unknown>;
         // this.chart is the root <g> for D3 content. Its transform mirrors the
         // Konva stage transform; syncSVGZoom() keeps them in sync during
         // zoom/pan. On resize it resets to the margin translation.
@@ -91,7 +105,6 @@ export class Chart {
 
         // Debounced resize: coalesce rapid window resize events into one call
         // per frame so projection fitting and shape rebuilds don't pile up.
-        this.resizeFrame = null;
         this.handleResize = () => {
             if (this.resizeFrame !== null) return;
             this.resizeFrame = requestAnimationFrame(() => {
@@ -101,8 +114,8 @@ export class Chart {
         };
     }
 
-    get selected() {
-        return document.querySelector(this.selector);
+    protected get selected(): HTMLElement {
+        return document.querySelector(this.selector) as HTMLElement;
     }
 
     /**
@@ -110,7 +123,7 @@ export class Chart {
      * resize+draw, registers the window resize listener, then queues a
      * compositor-flush RAF (see class-level comment for why this is needed).
      */
-    init() {
+    protected init(): void {
         this.resize();
         this.draw();
         window.addEventListener('resize', this.handleResize);
@@ -121,14 +134,14 @@ export class Chart {
         requestAnimationFrame(() => this.stage.batchDraw());
     }
 
-    draw() {}
-    update() {}
+    draw(): void {}
+    update(): void {}
 
     /**
      * Syncs container/stage/SVG dimensions and calls update() to rebuild
      * projection-dependent content. Called on init and debounced window resize.
      */
-    resize() {
+    resize(): void {
         const el = this.selected;
         this.containerWidth = el.clientWidth;
         this.containerHeight = el.clientHeight;
@@ -150,29 +163,19 @@ export class Chart {
 
     /**
      * Creates or replaces a named <g> element in the SVG chart group.
-     * If parent is provided, the group is created inside that selection
-     * instead of directly under this.chart.
      */
-    newGroup(name, parent = undefined) {
-        if (parent === undefined) {
-            this.chart.selectAll(`.${name}`).remove();
-            this[name] = this.chart.append('g').classed(name, true);
-            return this[name];
-        } else {
-            parent.selectAll(`.${name}`).remove();
-            parent[name] = parent.append('g').classed(name, true);
-            return parent[name];
-        }
+    protected newGroup(name: string): d3.Selection<SVGGElement, unknown, d3.BaseType, unknown> {
+        this.chart.selectAll(`.${name}`).remove();
+        return this.chart.append('g').classed(name, true);
     }
 
     /**
-     * Creates a named Konva.Layer and adds it to the stage.
-     * The layer is also stored as this[name] for direct access.
+     * Creates a Konva.Layer and adds it to the stage.
      */
-    newLayer(name) {
-        this[name] = new Konva.Layer();
-        this.stage.add(this[name]);
-        return this[name];
+    protected newLayer(): Konva.Layer {
+        const layer = new Konva.Layer();
+        this.stage.add(layer);
+        return layer;
     }
 
     /**
@@ -185,7 +188,7 @@ export class Chart {
      * already baked into the projection via fitExtent), not add the margin
      * themselves.
      */
-    syncSVGZoom(scale, x, y) {
+    protected syncSVGZoom(scale: number, x: number, y: number): void {
         this.chart.attr('transform', `translate(${x}, ${y}) scale(${scale})`);
     }
 }

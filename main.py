@@ -36,7 +36,7 @@ def bundle() -> None:
         [
             "npx",
             "esbuild",
-            "src/index.js",
+            "src/index.ts",
             "--bundle",
             "--minify",
             "--format=esm",
@@ -79,7 +79,7 @@ def dev(*, port: int = 3000) -> None:
     render()
     server = Server()
     server.watch("templates/index.html.liquid", render)
-    server.watch("src/*.js", bundle)
+    server.watch("src/*.ts", bundle)
     server.watch("scss/*.scss", bundle_css)
     server.serve(root="./dist/", port=port, open_url_delay=None)
 

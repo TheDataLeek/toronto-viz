@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build:css": "sass scss/main.scss dist/styles.css --no-source-map",
-    "build": "npm run build:css && esbuild src/index.js --bundle --minify --format=esm --outfile=dist/bundle.js",
+    "build": "npm run build:css && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/bundle.js",
+    "typecheck": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -27,7 +28,10 @@
     "konva": "^10.2.5"
   },
   "devDependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/geojson": "^7946.0.16",
     "esbuild": "^0.28.0",
-    "sass": "^1.99.0"
+    "sass": "^1.99.0",
+    "typescript": "^6.0.2"
   }
 }

@@ -6,6 +6,10 @@ render:
 dev:
     uv run python ./main.py dev
 
+# Type-check the frontend TypeScript source
+typecheck:
+    npm run typecheck
+
 # Run ruff and ty static analysis checks
 lint:
     uv run ruff check .
