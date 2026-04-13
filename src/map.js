@@ -107,7 +107,11 @@ export class Map extends Chart {
      */
     updateProjection() {
         this.projection = this.projection
-            .fitSize([this.width, this.height], this.stops);
+            .fitExtent(
+                [[this.margin.left, this.margin.top],
+                 [this.containerWidth - this.margin.right, this.containerHeight - this.margin.bottom]],
+                this.stops
+            );
         this.pathGenerator.projection(this.projection);
         this.stopPoints = this.stops.features
             .map(s => this.projection(s.geometry.coordinates))
@@ -115,18 +119,15 @@ export class Map extends Chart {
         this.resized = true;
         this.updateRoutePath();
         this.updateVehicleGeometry();
-        // if (!this.initialZoomDone) {
-        //     this.zoomToUnionStation();
-        // }
     }
 
     /**
      * Fires once after the projection is first fitted. Transitions the viewport
      * to Union Station (43°38′40″N 79°22′49″W) over 750 ms at zoom level 4.
      */
-    zoomToUnionStation() {
+    zoomToCoords(longitude, lattitude) {
         this.initialZoomDone = true;
-        const UNION_STATION = [-79.38028, 43.64444];
+        const UNION_STATION = [longitude, lattitude];
         const k = 2;
         const [px, py] = this.projection(UNION_STATION);
         const transform = d3.zoomIdentity
@@ -243,7 +244,7 @@ export class Map extends Chart {
         const stride = this.getStopStride(scale);
         if (!Number.isFinite(stride) || !this.stopPoints.length) return;
 
-        const radius = 5 / scale;
+        const radius = 3 / scale;
         ctx.beginPath();
         for (let i = 0; i < this.stopPoints.length; i += stride) {
             const [x, y] = this.stopPoints[i];
