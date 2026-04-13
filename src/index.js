@@ -37,7 +37,10 @@ export function init({ baseUrl } = {}) {
                     right: 100,
                 }});
 
-            map.update(data['ttc:paths'])
+            const status = document.querySelector('#status');
+            if (status) {
+                status.textContent = `${data['ttc:paths'].features?.length} vehicles · ${new Date().toLocaleTimeString()}`;
+            }
 
             setInterval(() => {
                 fetchJSON(`${baseUrl}/api/paths`, 'ttc:paths', true)
