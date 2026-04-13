@@ -3,23 +3,20 @@ body {
   grid-template-columns: 1fr auto;
   grid-template-rows: 1fr auto;
   grid-template-areas:
-    "map     colorbar"
-    "status  footer";
+    "map    map"
+    "status footer";
   width: 100vw;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--color-bg);
 }
 
 #map {
   grid-area: map;
+  position: relative;
   overflow: hidden;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-
-  canvas,
-  svg {
-    display: block;
-  }
 }

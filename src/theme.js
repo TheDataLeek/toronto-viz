@@ -1,10 +1,12 @@
+import * as d3 from "d3";
+
 function getThemeColor(varName) {
     return getComputedStyle(document.documentElement)
         .getPropertyValue(varName).trim();
 }
 
 export function buildTheme() {
-    return {
+    let theme = {
         bg:          getThemeColor('--color-bg'),
         routes:      getThemeColor('--color-routes'),
         stopsFill:   getThemeColor('--color-stops-fill'),
@@ -17,4 +19,11 @@ export function buildTheme() {
             getThemeColor('--color-speed-50'),
         ],
     };
+
+    theme.speedColorScale = d3.scaleLinear(
+        [0, 5, 15, 30, 50],
+        theme.speedScale
+    ).interpolate(d3.interpolateHcl).clamp(true);
+
+    return theme
 }

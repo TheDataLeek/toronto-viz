@@ -81,6 +81,8 @@ export class Chart {
         this.svg = d3.select(svgDiv).append('svg')
             .attr('width', container.clientWidth)
             .attr('height', container.clientHeight);
+
+        this.defs = this.svg.append('defs');
         // this.chart is the root <g> for D3 content. Its transform mirrors the
         // Konva stage transform; syncSVGZoom() keeps them in sync during
         // zoom/pan. On resize it resets to the margin translation.

@@ -1,6 +1,6 @@
 #footer-links {
   grid-area: footer;
-  padding: 1rem;
+  padding: 0.5rem 1rem;
   font-size: 0.8rem;
   font-family: monospace;
   display: flex;
@@ -16,23 +16,30 @@
   }
 }
 
+// Colorbar shares grid-area with #map so it stacks on top of it.
+// align-self/justify-self pin it to the bottom-right of that cell.
 #colorbar {
-  grid-area: colorbar;
-  width: 100px;
+  grid-area: map;
+  align-self: end;
+  justify-self: end;
+  margin: 0 1rem 1rem 0;
+  width: 180px;
+  height: 60px;
   padding: 0.5rem;
   pointer-events: none;
-  align-self: end;
+  z-index: 10;
+  background: rgba(17, 24, 39, 0.75);
+  border-radius: 6px;
 
   svg {
     display: block;
     overflow: visible;
-    margin-left: auto;
   }
 }
 
 #status {
   grid-area: status;
-  padding: 1rem;
+  padding: 0.5rem 1rem;
   font-size: 0.8rem;
   font-family: monospace;
   color: var(--color-text-muted);

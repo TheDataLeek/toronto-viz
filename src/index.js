@@ -1,5 +1,8 @@
+import {Colorbar} from "./colorbar";
+
 export { Chart } from './charting.js';
 export { Map } from './map.js';
+export { Colorbar } from './colorbar.js';
 export * as d3 from 'd3';
 
 import { Map as TTCMap } from './map.js';
@@ -36,6 +39,18 @@ export function init({ baseUrl } = {}) {
                     left: 100,
                     right: 100,
                 }});
+
+            const scale = new Colorbar(
+                "#colorbar",
+                {
+                    margin: {
+                        top: 12,
+                        bottom: 24,
+                        left: 8,
+                        right: 8,
+                    }
+                }
+            );
 
             const status = document.querySelector('#status');
             if (status) {
