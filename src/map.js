@@ -234,6 +234,31 @@ export class Map extends Chart {
     }
 
     /**
+     * Paints one frame: clears the canvas, then draws routes, stops, and
+     * vehicles in layer order. Always called via {@link scheduleRender}, never directly.
+     */
+    render() {
+        const {ctx} = this;               // 2D drawing context
+        const t = this.currentTransform;  // pan/zoom state {x,y,k}
+        const canvasNode = this.canvas?.node();       // raw DOM element
+        const canvasWidth = canvasNode?.width ?? this.containerWidth; // px wide
+        const canvasHeight = canvasNode?.height ?? this.containerHeight; // tall
+
+        ctx.save();                           // push state stack
+        ctx.setTransform(1, 0, 0, 1, 0, 0);  // reset to identity
+        ctx.fillStyle = this.theme.bg;        // background color
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight); // clear frame
+        ctx.translate(t.x, t.y);             // apply pan
+        ctx.scale(t.k, t.k);                 // apply zoom
+
+        this.renderRoutes(ctx, t.k);   // routes layer
+        this.renderStops(ctx, t.k);    // stops layer
+        this.renderVehicles(ctx, t.k); // vehicles on top
+
+        ctx.restore(); // pop state stack
+    }
+
+    /**
      * Draws transit stops onto the canvas at the current zoom level, using
      * stride-based thinning (via {@link getStopStride}) to skip stops when
      * zoomed out or mid-gesture.
@@ -241,50 +266,26 @@ export class Map extends Chart {
      * @param {number} scale - Current zoom scale (`transform.k`)
      */
     renderStops(ctx, scale) {
-        const stride = this.getStopStride(scale);
-        if (!Number.isFinite(stride) || !this.stopPoints.length) return;
+        const stride = this.getStopStride(scale); // thinning interval
+        if (!Number.isFinite(stride) || !this.stopPoints.length) return; // skip
 
-        const radius = 3 / scale;
-        ctx.beginPath();
-        for (let i = 0; i < this.stopPoints.length; i += stride) {
-            const [x, y] = this.stopPoints[i];
-            ctx.moveTo(x + radius, y);
-            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        const radius = 3 / scale; // shrinks as zoom grows
+        ctx.beginPath(); // start combined path
+        for (let i = 0; i < this.stopPoints.length; i += stride) { // strided
+            const [x, y] = this.stopPoints[i]; // screen coords
+            ctx.moveTo(x + radius, y); // arc requires a pre-move
+            ctx.arc(x, y, radius, 0, 2 * Math.PI); // trace full circle
         }
-        ctx.fillStyle = this.theme.stopsFill;
-        ctx.globalAlpha = 0.15;
-        ctx.fill();
-        ctx.strokeStyle = this.theme.stopsStroke;
-        ctx.lineWidth = 0.5 / scale;
-        ctx.globalAlpha = 0.35;
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = this.theme.stopsFill; // fill color
+        ctx.globalAlpha = 0.15;  // near-transparent fill
+        ctx.fill();              // paint all circles
+        ctx.strokeStyle = this.theme.stopsStroke; // stroke color
+        ctx.lineWidth = 0.5 / scale; // stays thin at any zoom
+        ctx.globalAlpha = 0.35;  // slightly more opaque
+        ctx.stroke();            // outline all circles
+        ctx.globalAlpha = 1;     // reset opacity
     }
 
-    /**
-     * Paints one frame: clears the canvas, then draws routes, stops, and
-     * vehicles in layer order. Always called via {@link scheduleRender}, never directly.
-     */
-    render() {
-        const {ctx} = this;
-        const t = this.currentTransform;
-        const canvasNode = this.canvas?.node();
-        const canvasWidth = canvasNode?.width ?? this.containerWidth;
-        const canvasHeight = canvasNode?.height ?? this.containerHeight;
-
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = this.theme.bg;
-        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-        ctx.translate(t.x, t.y);
-        ctx.scale(t.k, t.k);
-
-        this.renderRoutes(ctx, t.k);
-        this.renderStops(ctx, t.k);
-        this.renderVehicles(ctx, t.k);
-
-        ctx.restore();
-    }
 
     /**
      * Draws the transit route network onto the canvas.
@@ -292,14 +293,14 @@ export class Map extends Chart {
      * @param {number} scale - Current zoom scale (`transform.k`)
      */
     renderRoutes(ctx, scale) {
-        if (!this.routePath) return;
+        if (!this.routePath) return; // nothing to draw
 
-        ctx.beginPath();
-        ctx.strokeStyle = this.theme.routes;
-        ctx.lineWidth = 0.5 / scale;
-        ctx.globalAlpha = 0.1;
-        ctx.stroke(this.routePath);
-        ctx.globalAlpha = 1;
+        ctx.beginPath();             // clear current path
+        ctx.strokeStyle = this.theme.routes; // route line color
+        ctx.lineWidth = 0.5 / scale; // stays thin at any zoom
+        ctx.globalAlpha = 0.1;       // very faint
+        ctx.stroke(this.routePath);  // draw cached route paths
+        ctx.globalAlpha = 1;         // reset opacity
     }
 
     /**
@@ -313,34 +314,34 @@ export class Map extends Chart {
 
         const drawHistory = !this.isInteracting || scale >= INTERACTION_STOP_ZOOM;
 
-        this.vehicleGeometry.forEach(vehicle => {
-            if (drawHistory) {
-                ctx.strokeStyle = vehicle.color;
-                ctx.lineWidth = 1 / scale;
-                ctx.globalAlpha = 0.5;
-                ctx.stroke(vehicle.history);
+        this.vehicleGeometry.forEach(vehicle => { // each vehicle
+            if (drawHistory) { // skip trails while panning
+                ctx.strokeStyle = vehicle.color; // speed-based color
+                ctx.lineWidth = 1 / scale;       // constant visual width
+                ctx.globalAlpha = 0.5;           // semi-transparent trail
+                ctx.stroke(vehicle.history);     // draw path trail
             }
 
-            const [x, y] = vehicle.point;
-            ctx.fillStyle = vehicle.color;
-            ctx.globalAlpha = 1;
+            const [x, y] = vehicle.point; // current screen pos
+            ctx.fillStyle = vehicle.color; // speed-based color
+            ctx.globalAlpha = 1;           // fully opaque
 
-            if (vehicle.lastHeading == null) {
+            if (vehicle.lastHeading == null) { // no heading: dot
                 ctx.beginPath();
-                ctx.arc(x, y, 3 / scale, 0, 2 * Math.PI);
-                ctx.fill();
-            } else {
-                const size = 2.5 / scale;
-                ctx.save();
-                ctx.translate(x, y);
-                ctx.rotate(vehicle.lastHeading * Math.PI / 180);
-                ctx.beginPath();
+                ctx.arc(x, y, 3 / scale, 0, 2 * Math.PI); // full circle
+                ctx.fill(); // paint dot
+            } else { // has heading: arrow
+                const size = 2.5 / scale; // arrow half-size
+                ctx.save();               // isolate transform
+                ctx.translate(x, y);      // move origin to vehicle
+                ctx.rotate(vehicle.lastHeading * Math.PI / 180); // face heading
+                ctx.beginPath(); // start arrow path
                 ctx.moveTo(0, -size * 1.8);   // tip (forward)
                 ctx.lineTo(-size, size);       // back-left
                 ctx.lineTo(size, size);        // back-right
-                ctx.closePath();
-                ctx.fill();
-                ctx.restore();
+                ctx.closePath(); // close triangle
+                ctx.fill();      // paint arrow
+                ctx.restore();   // pop vehicle transform
             }
         });
     }

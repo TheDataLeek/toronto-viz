@@ -23,7 +23,8 @@
   },
   "homepage": "https://github.com/TheDataLeek/toronto-viz#readme",
   "dependencies": {
-    "d3": "^7.9.0"
+    "d3": "^7.9.0",
+    "konva": "^10.2.5"
   },
   "devDependencies": {
     "esbuild": "^0.28.0",
