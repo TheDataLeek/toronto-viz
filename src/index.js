@@ -5,11 +5,13 @@ export * as d3 from 'd3';
 import { Map as TTCMap } from './map.js';
 import {fetchJSON} from './data'
 
+const FETCH_INTERVAL = 30_000;
+
 export function init({ baseUrl } = {}) {
     Promise.allSettled([
         fetchJSON(`${baseUrl}/api/routes`, 'ttc:routes'),
         fetchJSON(`${baseUrl}/api/stops`, 'ttc:stops'),
-        fetchJSON(`${baseUrl}/api/paths`, 'ttc:paths'),
+        fetchJSON(`${baseUrl}/api/paths`, 'ttc:paths', true),
     ])
         .then(results => {
             const failures = results.filter(r => r.status === 'rejected');
@@ -28,12 +30,32 @@ export function init({ baseUrl } = {}) {
 
             console.log(data);
 
-            new TTCMap('#map', { baseUrl, data, margin: {
+            const map = new TTCMap('#map', { baseUrl, data, margin: {
                     top: 100,
                     bottom: 100,
                     left: 100,
                     right: 100,
                 }});
+
+            map.update(data['ttc:paths'])
+
+            setInterval(() => {
+                fetchJSON(`${baseUrl}/api/paths`, 'ttc:paths', true)
+                    .then(d => {
+                        if (!d) throw new Error('fetch returned empty response');
+                        let vehicleData = d.data;
+                        map.update(vehicleData);
+                        const status = document.querySelector('#status');
+                        if (status) {
+                            status.textContent = `${vehicleData.features?.length} vehicles · ${new Date().toLocaleTimeString()}`;
+                        }
+                    })
+                    .catch(e => {
+                        console.error('Fetch failed:', e);
+                        const status = document.querySelector('#status');
+                        if (status) status.textContent = `Fetch failed · retrying in ${FETCH_INTERVAL / 1000}s`;
+                    });
+            }, FETCH_INTERVAL);
         })
         .catch(console.error);
 }

@@ -1,28 +1,94 @@
 import * as d3 from 'd3';
+import Konva from "konva";
 
+/**
+ * Base class for all charts. Every instance creates two absolutely-positioned
+ * child divs inside the container:
+ *
+ *   container (position: relative)
+ *   ├── .chart-canvas  z-index:0  — Konva stage (canvas rendering)
+ *   └── .chart-svg     z-index:1  — D3 SVG overlay (pointer-events: none)
+ *
+ * Both layers fill the container and share the same coordinate space. The SVG
+ * is transparent and non-interactive by default; individual SVG elements can
+ * opt back in with pointer-events:auto. Subclasses call syncSVGZoom() from
+ * their zoom/pan handlers to keep the SVG transform in sync with the Konva
+ * stage transform.
+ *
+ * ## Render pipeline
+ *
+ * Construction (synchronous):
+ *   1. constructor() — builds DOM, creates Konva.Stage and D3 SVG
+ *   2. subclass.setupMap() — creates Konva.Layers via newLayer(); each
+ *      stage.add(layer) call queues a Konva batchDraw RAF internally
+ *   3. init() → resize() → update() — fits projection, builds all shapes,
+ *      calls layer.draw() synchronously to paint the canvas buffers
+ *   4. init() → draw() → update() — second synchronous repaint (redundant
+ *      but harmless; shapes are already built)
+ *
+ * Post-construction (one RAF later):
+ *   5. requestAnimationFrame(() => stage.batchDraw()) — compositor flush
+ *
+ * ## Why the compositor flush is necessary
+ *
+ * Konva deduplicates draw requests via a _waitingForDraw flag per layer. All
+ * batchDraw() calls that arrive before the first RAF fires are collapsed into
+ * a single draw. This RAF is queued the moment the first layer is added in
+ * setupMap(), long before any shapes exist.
+ *
+ * By step 3, all shapes are built and layer.draw() has painted the canvas
+ * 2D contexts synchronously. However, the browser's compositor does not
+ * necessarily flush canvas pixels to the display in the same task that drew
+ * them — it waits until after the current call stack clears and the next
+ * frame boundary. All of steps 1–4 run synchronously inside the Map
+ * constructor call in index.js, so the browser never gets a chance to
+ * composite until after the constructor returns.
+ *
+ * The extra RAF in step 5 fires after the JS call stack is clear, giving the
+ * browser a proper frame boundary at which to composite the already-drawn
+ * canvas pixels. Without it, the canvas appears blank until the next
+ * externally-triggered redraw (user zoom, data refresh interval, etc.).
+ */
 export class Chart {
-    constructor(selector, params={}) {
+    constructor(selector, params = {}) {
         this.selector = selector;
-        this.renderer = params.renderer || 'svg';
-        this.margin = params.margin || {
-            top: 0,
-            bottom: 0,
-            left: 0,
-            right: 0,
-        };
+        this.margin = params.margin || { top: 0, bottom: 0, left: 0, right: 0 };
 
-        d3.select(selector).html('');
+        const container = document.querySelector(selector);
+        container.innerHTML = '';
+        container.style.position = 'relative';
 
-        if (this.renderer === 'canvas') {
-            this.canvas = d3.select(selector).append('canvas');
-            this.ctx = this.canvas.node().getContext('2d', {
-                desynchronized: true,
-            }) || this.canvas.node().getContext('2d');
-        } else {
-            this.svg = d3.select(selector).append('svg');
-            this.chart = this.svg.append('g');
-        }
+        // Canvas layer — Konva builds its own konvajs-content div inside here
+        // with explicit pixel dimensions matching the stage width/height.
+        const canvasDiv = document.createElement('div');
+        canvasDiv.className = 'chart-canvas';
+        canvasDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;';
+        container.appendChild(canvasDiv);
 
+        this.stage = new Konva.Stage({
+            container: canvasDiv,
+            width: container.clientWidth,
+            height: container.clientHeight,
+        });
+
+        // SVG layer — sits above canvas, transparent and non-interactive by
+        // default so all mouse/touch events fall through to Konva.
+        const svgDiv = document.createElement('div');
+        svgDiv.className = 'chart-svg';
+        svgDiv.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none;';
+        container.appendChild(svgDiv);
+
+        this.svg = d3.select(svgDiv).append('svg')
+            .attr('width', container.clientWidth)
+            .attr('height', container.clientHeight);
+        // this.chart is the root <g> for D3 content. Its transform mirrors the
+        // Konva stage transform; syncSVGZoom() keeps them in sync during
+        // zoom/pan. On resize it resets to the margin translation.
+        this.chart = this.svg.append('g').attr('class', 'chart')
+            .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
+
+        // Debounced resize: coalesce rapid window resize events into one call
+        // per frame so projection fitting and shape rebuilds don't pile up.
         this.resizeFrame = null;
         this.handleResize = () => {
             if (this.resizeFrame !== null) return;
@@ -37,49 +103,55 @@ export class Chart {
         return document.querySelector(this.selector);
     }
 
+    /**
+     * Called once at the end of the subclass constructor. Runs the initial
+     * resize+draw, registers the window resize listener, then queues a
+     * compositor-flush RAF (see class-level comment for why this is needed).
+     */
     init() {
-        // need to initialize chart initially
         this.resize();
-        // and then initial draw for elements
         this.draw();
-        // and on resize, redraw
         window.addEventListener('resize', this.handleResize);
+        // Compositor flush — see class-level comment for the full explanation.
+        // TL;DR: canvas pixels painted synchronously during construction are
+        // not composited to the display until after the JS call stack clears.
+        // This RAF provides that frame boundary.
+        requestAnimationFrame(() => this.stage.batchDraw());
     }
 
-    draw() {
-        // this is overridden by subclass
-    }
+    draw() {}
+    update() {}
 
-    update() {
-        // this is overridden by subclass
-    }
-
+    /**
+     * Syncs container/stage/SVG dimensions and calls update() to rebuild
+     * projection-dependent content. Called on init and debounced window resize.
+     */
     resize() {
-        // calculates new dimensions and draws
-        // https://bl.ocks.org/curran/3a68b0c81991e2e94b19
-        this.containerWidth = this.selected.clientWidth;
-        this.containerHeight = this.selected.clientHeight;
-
+        const el = this.selected;
+        this.containerWidth = el.clientWidth;
+        this.containerHeight = el.clientHeight;
         this.width = this.containerWidth - this.margin.left - this.margin.right;
         this.height = this.containerHeight - this.margin.top - this.margin.bottom;
 
-        if (this.renderer === 'canvas') {
-            this.canvas
-                .attr('width', this.containerWidth)
-                .attr('height', this.containerHeight);
-        } else {
-            this.svg
-                .attr('width', this.containerWidth)
-                .attr('height', this.containerHeight);
+        this.stage.width(this.containerWidth);
+        this.stage.height(this.containerHeight);
+        this.svg
+            .attr('width', this.containerWidth)
+            .attr('height', this.containerHeight);
+        // Reset to margin-only transform; syncSVGZoom() will re-apply the
+        // full pan/scale transform once the subclass re-establishes zoom state.
+        this.chart
+            .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
 
-            this.chart
-                .attr('transform', `translate(${this.margin.left}, ${this.margin.top})`);
-        }
-
-        this.update()
+        this.update();
     }
 
-    newGroup(name, parent=undefined) {
+    /**
+     * Creates or replaces a named <g> element in the SVG chart group.
+     * If parent is provided, the group is created inside that selection
+     * instead of directly under this.chart.
+     */
+    newGroup(name, parent = undefined) {
         if (parent === undefined) {
             this.chart.selectAll(`.${name}`).remove();
             this[name] = this.chart.append('g').classed(name, true);
@@ -89,5 +161,29 @@ export class Chart {
             parent[name] = parent.append('g').classed(name, true);
             return parent[name];
         }
+    }
+
+    /**
+     * Creates a named Konva.Layer and adds it to the stage.
+     * The layer is also stored as this[name] for direct access.
+     */
+    newLayer(name) {
+        this[name] = new Konva.Layer();
+        this.stage.add(this[name]);
+        return this[name];
+    }
+
+    /**
+     * Applies the Konva stage's current pan/scale to the SVG chart group so
+     * that SVG elements drawn in world (projection) coordinates stay aligned
+     * with their canvas counterparts. Call this from zoom and drag handlers.
+     *
+     * Note: this replaces the margin-only transform set by resize(). SVG
+     * elements should use projected world coordinates directly (margin is
+     * already baked into the projection via fitExtent), not add the margin
+     * themselves.
+     */
+    syncSVGZoom(scale, x, y) {
+        this.chart.attr('transform', `translate(${x}, ${y}) scale(${scale})`);
     }
 }
