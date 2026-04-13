@@ -109,6 +109,7 @@ export class Map extends Chart {
         this.newLayer('stopsLayer').listening(false);
         this.newLayer('vehiclesLayer').listening(false);
 
+        this.drawColorbar();
         this.setupMapControls();
     }
 
@@ -369,6 +370,76 @@ export class Map extends Chart {
             listening: false,
             perfectDrawEnabled: false,
         }));
+    }
+
+    drawColorbar() {
+        const container = document.querySelector('#colorbar');
+        if (!container) return;
+
+        const barHeight = 150;
+        const barWidth  = 12;
+        const tickLen   = 4;
+        const labelPad  = 6;
+        const titlePad  = 10;
+
+        // Control points: top = fast (50 km/h), bottom = slow (0 km/h)
+        const stops = [
+            { speed: 50, t: 0.0, color: this.theme.speedScale[4] },
+            { speed: 30, t: 0.4, color: this.theme.speedScale[3] },
+            { speed: 15, t: 0.7, color: this.theme.speedScale[2] },
+            { speed:  5, t: 0.9, color: this.theme.speedScale[1] },
+            { speed:  0, t: 1.0, color: this.theme.speedScale[0] },
+        ];
+
+        const svg = d3.select(container).append('svg')
+            .attr('width', barWidth)
+            .attr('height', barHeight + titlePad + 10);
+
+        const defs = svg.append('defs');
+        const grad = defs.append('linearGradient')
+            .attr('id', 'speed-gradient')
+            .attr('x1', '0').attr('y1', '0')
+            .attr('x2', '0').attr('y2', '1');
+        stops.forEach(s =>
+            grad.append('stop')
+                .attr('offset', `${s.t * 100}%`)
+                .attr('stop-color', s.color)
+        );
+
+        // Offset group so title has room above bar
+        const g = svg.append('g').attr('transform', `translate(0, ${titlePad})`);
+
+        g.append('text')
+            .attr('x', barWidth / 2)
+            .attr('y', -4)
+            .attr('text-anchor', 'middle')
+            .attr('fill', 'var(--color-text-muted)')
+            .style('font-size', '10px')
+            .style('font-family', 'monospace')
+            .text('km/h');
+
+        g.append('rect')
+            .attr('width', barWidth)
+            .attr('height', barHeight)
+            .attr('fill', 'url(#speed-gradient)');
+
+        stops.forEach(s => {
+            const y = s.t * barHeight;
+            g.append('line')
+                .attr('x1', 0).attr('x2', -tickLen)
+                .attr('y1', y).attr('y2', y)
+                .attr('stroke', 'var(--color-text-muted)')
+                .attr('stroke-width', 1);
+            g.append('text')
+                .attr('x', -(tickLen + labelPad))
+                .attr('y', y)
+                .attr('text-anchor', 'end')
+                .attr('dominant-baseline', 'middle')
+                .attr('fill', 'var(--color-text-muted)')
+                .style('font-size', '11px')
+                .style('font-family', 'monospace')
+                .text(s.speed);
+        });
     }
 
     /**

@@ -1,11 +1,18 @@
 body {
-  background: var(--color-bg);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "map     colorbar"
+    "status  footer";
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
+  background: var(--color-bg);
 }
 
 #map {
-  width: 100vw;
-  height: 100vh;
+  grid-area: map;
   overflow: hidden;
   display: flex;
   align-items: center;

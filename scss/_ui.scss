@@ -1,7 +1,6 @@
 #footer-links {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
+  grid-area: footer;
+  padding: 1rem;
   font-size: 0.8rem;
   font-family: monospace;
   display: flex;
@@ -17,10 +16,23 @@
   }
 }
 
+#colorbar {
+  grid-area: colorbar;
+  width: 100px;
+  padding: 0.5rem;
+  pointer-events: none;
+  align-self: end;
+
+  svg {
+    display: block;
+    overflow: visible;
+    margin-left: auto;
+  }
+}
+
 #status {
-  position: fixed;
-  bottom: 1rem;
-  left: 1rem;
+  grid-area: status;
+  padding: 1rem;
   font-size: 0.8rem;
   font-family: monospace;
   color: var(--color-text-muted);
