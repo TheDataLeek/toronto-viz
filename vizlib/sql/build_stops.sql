@@ -17,5 +17,4 @@ CREATE OR REPLACE TABLE stops AS (
     FROM ttc_stops
 );
 
-
 DROP TABLE ttc_stops;

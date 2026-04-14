@@ -6,7 +6,7 @@ export * as d3 from 'd3';
 import { Map as TTCMap } from './map';
 import { Colorbar } from './colorbar';
 import { fetchJSON } from './data';
-import type { MapData, FeatureCollection, LineString, PathProperties } from './types';
+import type { MapData, FeatureCollection, LineString, PathProperties, AvgSpeedProperties, Polygon } from './types';
 
 const FETCH_INTERVAL = 30_000;
 
@@ -72,6 +72,43 @@ export function init({ baseUrl = '' } = {}): void {
                         if (status) status.textContent = `Fetch failed · retrying in ${FETCH_INTERVAL / 1000}s`;
                     });
             }, FETCH_INTERVAL);
+
+            const resetBtn = document.querySelector<HTMLButtonElement>('#btn-reset-map');
+            resetBtn?.addEventListener('click', () => map.resetZoom());
+
+            const locBtn = document.querySelector<HTMLButtonElement>('#btn-current-locations');
+            locBtn?.addEventListener('click', () => {
+                const visible = map.toggleVehicles();
+                if (locBtn) {
+                    locBtn.textContent = visible ? 'Hide Locations' : 'Show Locations';
+                    locBtn.classList.toggle('active', !visible);
+                }
+            });
+
+            let avgSpeedsLoaded = false;
+            const avgBtn = document.querySelector<HTMLButtonElement>('#btn-avg-speeds');
+            avgBtn?.addEventListener('click', () => {
+                if (!avgSpeedsLoaded) {
+                    fetchJSON<FeatureCollection<Polygon, AvgSpeedProperties>>(`${baseUrl}/api/avgSpeeds`, 'ttc:avgSpeeds', true)
+                        .then(result => {
+                            if (!result) return;
+                            console.log(result);
+                            avgSpeedsLoaded = true;
+                            map.setAvgSpeedsData(result.data);
+                            if (avgBtn) {
+                                avgBtn.textContent = 'Hide Avg Speeds';
+                                avgBtn.classList.add('active');
+                            }
+                        })
+                        .catch(e => console.error('avgSpeeds fetch failed:', e));
+                } else {
+                    const visible = map.toggleAvgSpeeds();
+                    if (avgBtn) {
+                        avgBtn.textContent = visible ? 'Hide Avg Speeds' : 'Average Speeds';
+                        avgBtn.classList.toggle('active', visible);
+                    }
+                }
+            });
         })
         .catch(console.error);
 }

@@ -1,14 +1,28 @@
 body {
   display: grid;
   grid-template-columns: 1fr auto;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto 1fr auto;
   grid-template-areas:
+    "header header"
     "map    map"
     "status footer";
   width: 100vw;
   height: 100dvh;
   overflow: hidden;
   background: var(--color-bg);
+}
+
+header {
+  grid-area: header;
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.25rem;
+  height: 3rem;
+  background: #1a2233;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 #map {

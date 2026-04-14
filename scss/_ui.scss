@@ -1,3 +1,125 @@
+// ── Header ───────────────────────────────────────────────────────────────────
+
+.header-brand {
+  font-family: monospace;
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: var(--color-stops-stroke);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+// Spacer between brand and nav
+#header-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.nav-btn {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: 1px solid rgba(107, 114, 128, 0.35);
+  border-radius: 4px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--color-stops-fill);
+    border-color: var(--color-stops-fill);
+  }
+
+  &.active {
+    color: var(--color-speed-30);
+    border-color: var(--color-speed-30);
+  }
+}
+
+// ── Hamburger (mobile only) ───────────────────────────────────────────────────
+
+.nav-toggle-input {
+  display: none;
+}
+
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 2rem;
+  height: 2rem;
+  cursor: pointer;
+  margin-left: auto;
+  flex-shrink: 0;
+
+  span {
+    display: block;
+    height: 2px;
+    background: var(--color-text-muted);
+    border-radius: 2px;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    transform-origin: center;
+  }
+}
+
+// Animate hamburger → ✕ when open
+.nav-toggle-input:checked ~ .hamburger span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.nav-toggle-input:checked ~ .hamburger span:nth-child(2) {
+  opacity: 0;
+  transform: scaleX(0);
+}
+.nav-toggle-input:checked ~ .hamburger span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+@media (max-width: 600px) {
+  .hamburger {
+    display: flex;
+  }
+
+  #header-nav {
+    // Hidden by default; opens as absolute dropdown below header
+    display: none;
+    position: absolute;
+    top: 3rem;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    margin-left: 0;
+    background: #1a2233;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0.5rem 1rem;
+
+    .nav-btn {
+      text-align: left;
+      padding: 0.6rem 0.5rem;
+      border: none;
+      border-radius: 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+
+      &:last-child {
+        border-bottom: none;
+      }
+    }
+  }
+
+  .nav-toggle-input:checked ~ .hamburger ~ #header-nav {
+    display: flex;
+  }
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+
 #footer-links {
   grid-area: footer;
   padding: 0.5rem 1rem;

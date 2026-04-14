@@ -2,7 +2,7 @@ import * as d3 from 'd3';
 import Konva from 'konva';
 import { Chart } from './charting';
 import { buildTheme } from './theme';
-import type { Theme, MapData, PathProperties, FeatureCollection, LineString, Point } from './types';
+import type { Theme, MapData, PathProperties, AvgSpeedProperties, FeatureCollection, LineString, Point, Polygon } from './types';
 
 // d3.GeoPath has a `this` context type constraint on its call signature that
 // conflicts with class method context. This interface exposes only what we
@@ -13,13 +13,16 @@ interface GeoPathFn {
 }
 
 const MIN_STOP_ZOOM = 1.25;
+const MIN_LABEL_ZOOM = 15.0;   // zoom threshold below which stop names are hidden
 const INTERACTION_STOP_ZOOM = 4;
 const ZOOM_FACTOR = 1.15;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 20;
-const STOP_RADIUS = 2;   // screen pixels
-const MARKER_RADIUS = 3; // screen pixels (dot)
-const ARROW_SIZE = 2.5;  // screen pixels (triangle half-width)
+const STOP_RADIUS = 2;      // screen pixels
+const LABEL_LINE_LEN = 5;   // screen pixels — leader line from circle to text
+const LABEL_FONT_PX = 8;    // screen pixels
+const MARKER_RADIUS = 3;    // screen pixels (dot)
+const ARROW_SIZE = 2.5;     // screen pixels (triangle half-width)
 
 interface VehicleGeometry {
     trail: Konva.Path;
@@ -85,7 +88,7 @@ export class Map extends Chart {
     private stops!: FeatureCollection<Point>;
     private routes!: FeatureCollection<LineString>;
     private vehicleGeometry: VehicleGeometry[] = [];
-    private stopCoords: [number, number][] = [];
+    private stopData: Array<{ pos: [number, number]; name: string; direction: number }> = [];
     private _zoomFrame: number | null = null;
     private _pendingScale = 1;
     private _lastWidth?: number;
@@ -95,8 +98,10 @@ export class Map extends Chart {
     private pathGenerator!: GeoPathFn;
     private zoom!: d3.ZoomBehavior<SVGSVGElement, unknown>;
     private routesLayer!: Konva.Layer;
+    private avgSpeedsLayer!: Konva.Layer;
     private stopsLayer!: Konva.Layer;
     private vehiclesLayer!: Konva.Layer;
+    private _avgSpeedsData: FeatureCollection<Polygon, AvgSpeedProperties> | null = null;
 
     constructor(selector: string, params: MapParams) {
         super(selector, params);
@@ -127,6 +132,9 @@ export class Map extends Chart {
         // Side effect: each stage.add() + .listening(false) call queues a
         // Konva batchDraw RAF internally; the compositor-flush RAF in
         // Chart.init() handles making those visible (see Chart class comment).
+        this.avgSpeedsLayer = this.newLayer();
+        this.avgSpeedsLayer.listening(false);
+        this.avgSpeedsLayer.visible(false);
         this.routesLayer = this.newLayer();
         this.routesLayer.listening(false);
         this.stopsLayer = this.newLayer();
@@ -165,6 +173,7 @@ export class Map extends Chart {
                     this._zoomFrame = requestAnimationFrame(() => {
                         this._zoomFrame = null;
                         this._rescaleShapes(this._pendingScale);
+                        this.avgSpeedsLayer.batchDraw();
                         this.stopsLayer.batchDraw();
                         this.vehiclesLayer.batchDraw();
                     });
@@ -180,6 +189,7 @@ export class Map extends Chart {
                 this.vehicleGeometry.forEach(({ trail }) => trail.visible(true));
                 this._rescaleShapes(this.stage.scaleX());
                 this._updateStopVisibility();
+                this.avgSpeedsLayer.batchDraw();
                 this.vehiclesLayer.batchDraw();
             });
 
@@ -219,6 +229,10 @@ export class Map extends Chart {
             this._buildStopShapes();
             this.updateRoutes();
             this.routesLayer.draw();
+            if (this._avgSpeedsData) {
+                this._buildAvgSpeedsShapes();
+                this.avgSpeedsLayer.draw();
+            }
             this.stopsLayer.draw();
         }
 
@@ -391,11 +405,17 @@ export class Map extends Chart {
      * Called only on resize.
      */
     private _buildStopShapes(): void {
-        this.stopCoords = this.stops.features
-            .map(s => this.projection(s.geometry.coordinates as [number, number]))
-            .filter((c): c is [number, number] => c !== null);
+        this.stopData = this.stops.features
+            .map(s => {
+                const pos = this.projection(s.geometry.coordinates as [number, number]);
+                if (!pos) return null;
+                return { pos: pos as [number, number], name: s.properties?.stopName ?? '', direction: s.properties?.labelDirection ?? 0 };
+            })
+            .filter((d): d is { pos: [number, number]; name: string; direction: number } => d !== null);
 
         this.stopsLayer.destroyChildren();
+
+        // Shape 1: stop circles (all zoom levels above MIN_STOP_ZOOM)
         this.stopsLayer.add(new Konva.Shape({
             fill: this.theme.stopsFill,
             opacity: 0.25,
@@ -405,12 +425,65 @@ export class Map extends Chart {
                 if (!Number.isFinite(stride)) return;
                 const r = STOP_RADIUS / scale;
                 ctx.beginPath();
-                for (let i = 0; i < this.stopCoords.length; i += stride) {
-                    const [x, y] = this.stopCoords[i];
+                for (let i = 0; i < this.stopData.length; i += stride) {
+                    const [x, y] = this.stopData[i].pos;
                     ctx.moveTo(x + r, y);
                     ctx.arc(x, y, r, 0, Math.PI * 2);
                 }
                 ctx.fillShape(shape);
+            },
+            listening: false,
+            perfectDrawEnabled: false,
+        }));
+
+        // Shape 2: leader lines + stop name labels (only at MIN_LABEL_ZOOM and above)
+        this.stopsLayer.add(new Konva.Shape({
+            sceneFunc: (ctx: Konva.Context) => {
+                const scale = this.stage.scaleX();
+                if (scale < MIN_LABEL_ZOOM) return;
+                const stride = this.getStopStride(scale);
+                if (!Number.isFinite(stride)) return;
+
+                const r = STOP_RADIUS / scale;
+                const lineLen = LABEL_LINE_LEN / scale;
+                const dx = (r + lineLen) * 0.707;
+                const dy = (r + lineLen) * 0.707;
+                const rdx = r * 0.707;
+                const rdy = r * 0.707;
+                const gap = 1 / scale; // 1px gap between line end and text
+
+                // Direction 0=upper-right, 1=upper-left, 2=lower-left, 3=lower-right
+                const SIGN_X = [1, -1, -1,  1];
+                const SIGN_Y = [-1, -1,  1,  1];
+
+                const native: CanvasRenderingContext2D = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+                native.save();
+                native.strokeStyle = this.theme.stopsFill;
+                native.fillStyle = this.theme.stopsFill;
+                native.globalAlpha = 0.25;
+                native.lineWidth = 0.75 / scale;
+                native.font = `${LABEL_FONT_PX / scale}px sans-serif`;
+
+                native.beginPath();
+                for (let i = 0; i < this.stopData.length; i += stride) {
+                    const { pos: [x, y], name, direction } = this.stopData[i];
+                    if (!name) continue;
+                    const sx = SIGN_X[direction], sy = SIGN_Y[direction];
+                    native.moveTo(x + rdx * sx, y + rdy * sy);
+                    native.lineTo(x + dx * sx, y + dy * sy);
+                }
+                native.stroke();
+
+                for (let i = 0; i < this.stopData.length; i += stride) {
+                    const { pos: [x, y], name, direction } = this.stopData[i];
+                    if (!name) continue;
+                    const sx = SIGN_X[direction], sy = SIGN_Y[direction];
+                    native.textAlign = sx > 0 ? 'left' : 'right';
+                    native.textBaseline = sy < 0 ? 'bottom' : 'top';
+                    native.fillText(name, x + (dx + gap) * sx, y + dy * sy);
+                }
+
+                native.restore();
             },
             listening: false,
             perfectDrawEnabled: false,
@@ -439,5 +512,94 @@ export class Map extends Chart {
                 marker.points([0, -s * 1.8, -s, s, s, s]);
             }
         });
+    }
+
+    /**
+     * Resets the viewport to the default (identity) zoom with a smooth
+     * transition, showing the full stop extent as fitted at init time.
+     */
+    resetZoom(): void {
+        (this.svg as unknown as d3.Selection<SVGSVGElement, unknown, d3.BaseType, unknown>)
+            .transition().duration(750)
+            .call(this.zoom.transform, d3.zoomIdentity);
+    }
+
+    /**
+     * Toggles the vehicles layer visibility. Returns the new visibility state.
+     */
+    toggleVehicles(): boolean {
+        const newVis = !this.vehiclesLayer.visible();
+        this.vehiclesLayer.visible(newVis);
+        this.vehiclesLayer.batchDraw();
+        return newVis;
+    }
+
+    /**
+     * Loads avg-speed GeoJSON data, builds the avg-speeds layer, and makes it
+     * visible. Replaces any previously loaded data. Called on first button press.
+     */
+    setAvgSpeedsData(data: FeatureCollection<Polygon, AvgSpeedProperties>): void {
+        this._avgSpeedsData = data;
+        this._buildAvgSpeedsShapes();
+        this.avgSpeedsLayer.visible(true);
+        this.avgSpeedsLayer.draw();
+    }
+
+    /**
+     * Toggles the avg-speeds layer visibility. Returns the new visibility state.
+     */
+    toggleAvgSpeeds(): boolean {
+        const newVis = !this.avgSpeedsLayer.visible();
+        this.avgSpeedsLayer.visible(newVis);
+        this.avgSpeedsLayer.batchDraw();
+        return newVis;
+    }
+
+    /**
+     * Builds the avg-speeds canvas layer from `_avgSpeedsData`. Each point is
+     * drawn as a small circle colored by the speed color scale. Radius is read
+     * live from stage scale inside sceneFunc so zoom keeps dots screen-constant.
+     * Called on data load and on resize (when data is already loaded).
+     */
+    private _buildAvgSpeedsShapes(): void {
+        if (!this._avgSpeedsData) return;
+
+        this.avgSpeedsLayer.destroyChildren();
+
+        // Project each hex's exterior ring vertices into world coordinates.
+        // Direct projection avoids geoPath's clip-wrapping behaviour, which can
+        // produce exterior-fill paths for cells near the projection boundary.
+        const speedData: Array<{ coords: [number, number][]; speed: number }> = [];
+        this._avgSpeedsData.features.forEach(f => {
+            const ring = f.geometry.coordinates[0];
+            const coords: [number, number][] = [];
+            for (const coord of ring) {
+                const p = this.projection(coord as [number, number]);
+                if (p) coords.push(p as [number, number]);
+            }
+            if (coords.length < 3) return;
+            speedData.push({ coords, speed: f.properties?.speed ?? 0 });
+        });
+
+        this.avgSpeedsLayer.add(new Konva.Shape({
+            sceneFunc: (ctx: Konva.Context) => {
+                const native: CanvasRenderingContext2D = (ctx as unknown as { _context: CanvasRenderingContext2D })._context;
+                native.save();
+                native.globalAlpha = 0.65;
+                for (const { coords, speed } of speedData) {
+                    native.fillStyle = this.theme.speedColorScale(speed);
+                    native.beginPath();
+                    native.moveTo(coords[0][0], coords[0][1]);
+                    for (let i = 1; i < coords.length; i++) {
+                        native.lineTo(coords[i][0], coords[i][1]);
+                    }
+                    native.closePath();
+                    native.fill();
+                }
+                native.restore();
+            },
+            listening: false,
+            perfectDrawEnabled: false,
+        }));
     }
 }

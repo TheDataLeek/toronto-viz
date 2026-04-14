@@ -45,3 +45,9 @@ async def api_stops(request: Request):
 async def api_routes(request: Request):
     df = query_database(SQL_DIR / "routes.sql")
     return to_geojson(df)
+
+@router.get("/api/avgSpeeds")
+@limiter.limit("30/minute")
+async def api_avg_speeds(request: Request):
+    df = query_database(SQL_DIR / "avg_speeds.sql")
+    return to_geojson(df)

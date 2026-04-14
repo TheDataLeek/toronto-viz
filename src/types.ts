@@ -1,11 +1,18 @@
 import type * as d3 from 'd3';
-import type { Feature, FeatureCollection, LineString, Point } from 'geojson';
+import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson';
 
-export type { Feature, FeatureCollection, LineString, Point };
+export type { Feature, FeatureCollection, LineString, Point, Polygon };
 
 export interface PathProperties {
     avgSpeedKmHr: number;
     lastHeading: number | null;
+}
+
+export interface AvgSpeedProperties {
+    hexId: string;
+    hourOfDay: number;
+    speed: number;
+    numObservations: number;
 }
 
 export type RouteFeature = Feature<LineString>;

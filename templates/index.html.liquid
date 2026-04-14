@@ -7,6 +7,18 @@
     <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+    <header>
+        <span class="header-brand">TTC Tracker</span>
+        <input type="checkbox" id="nav-toggle" class="nav-toggle-input">
+        <label class="hamburger" for="nav-toggle" aria-label="Toggle navigation">
+            <span></span><span></span><span></span>
+        </label>
+        <nav id="header-nav">
+            <button class="nav-btn" id="btn-reset-map">Reset Map</button>
+            <button class="nav-btn" id="btn-current-locations">Hide Locations</button>
+            <button class="nav-btn" id="btn-avg-speeds">Average Speeds</button>
+        </nav>
+    </header>
     <div id="map">
         <span class="loader"></span>
     </div>

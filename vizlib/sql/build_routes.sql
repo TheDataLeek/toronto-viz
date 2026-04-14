@@ -12,7 +12,3 @@ CREATE OR REPLACE TABLE routes AS (
       FROM ttc_shapes
       GROUP BY shape_id
 );
-
-
-DROP TABLE ttc_shapes
-;
