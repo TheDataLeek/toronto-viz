@@ -15,7 +15,7 @@ todo: configurable params: lookback, hour of day, resolution
 
 WITH speed_by_hex AS (
   SELECT
-    h3_latlng_to_cell(CAST(lat AS DOUBLE), CAST(lon AS DOUBLE), 9) AS hex_id,
+    h3_latlng_to_cell(CAST(lat AS DOUBLE), CAST(lon AS DOUBLE), 8) AS hex_id,
     DATE_PART('hour', api_timestamp) AS hour_of_day,
     AVG(CAST(speedkmhr AS FLOAT)) AS speed,
     COUNT(*) AS num_observations
