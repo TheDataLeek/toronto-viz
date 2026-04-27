@@ -23,7 +23,7 @@ cli = cyclopts.App()
 
 DIST = Path(__file__).parent / "dist"
 RENDERED_INDEX = DIST / "index.html"
-PROD_API_URL = "https://snek.taila15010.ts.net"
+PROD_API_URL = "https://homelab-server.taila15010.ts.net"
 DEV_API_URL = "http://127.0.0.1:5000"
 
 
