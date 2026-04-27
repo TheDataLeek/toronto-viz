@@ -1,6 +1,6 @@
 # toronto-viz
 
-Scrapes TTC vehicle locations every 60 seconds and serves them via a FastAPI app. Also fetches TTC GTFS static data (stops, route shapes) from Toronto Open Data every 24 hours. A canvas-based map frontend (D3.js, hosted on GitHub Pages) polls the API and renders live vehicle positions. Designed to run on a Raspberry Pi as a systemd service.
+Scrapes TTC vehicle locations every 60 seconds and serves them via a FastAPI app. Also fetches TTC GTFS static data (stops, route shapes) from Toronto Open Data every 24 hours. A canvas-based map frontend (D3.js, hosted on GitHub Pages) polls the API and renders live vehicle positions.
 
 ## How it works
 
@@ -40,6 +40,24 @@ The `tests/test_scraper.py` suite uses in-memory DuckDB. `test_db_write` require
 ## Frontend
 
 The map is a vanilla JS + D3.js canvas app in `src/`. It prefetches route shapes and stops on load, then polls `/api/paths` every 30 seconds to update vehicle positions. The Liquid template (`templates/index.html.liquid`) is rendered into `dist/index.html` with the correct API URL injected at build time. The `dist/` directory is what GitHub Pages serves.
+
+## Docker deployment
+
+The backend is published to `ghcr.io/thedataleek/toronto-viz:latest` on every push to `main`.
+
+```sh
+docker compose up -d
+```
+
+The `docker-compose.yml` in the repo root is all you need. It pulls the pre-built image and mounts a named volume at `/app/data` to persist the DuckDB database across updates. The API is available at `http://localhost:5000`.
+
+To update to the latest image:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+The container runs the backup script at startup and every 24 hours; backups land in the same volume at `/app/data/backups/`.
 
 ## Raspberry Pi deployment
 
