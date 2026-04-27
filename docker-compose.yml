@@ -1,0 +1,11 @@
+services:
+  toronto-viz:
+    image: ghcr.io/thedataleek/toronto-viz:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - toronto_viz_data:/app/data
+
+volumes:
+  toronto_viz_data:

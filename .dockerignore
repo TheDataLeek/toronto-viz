@@ -1,0 +1,16 @@
+.git/
+.github/
+data/
+dist/
+src/
+scss/
+templates/
+tests/
+node_modules/
+deploy/install.py
+deploy/run.sh
+deploy/toronto-viz.service
+*.md
+.python-version
+package.json
+package-lock.json
