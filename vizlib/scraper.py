@@ -16,22 +16,32 @@ from .util import ensure_valid_session
 TABLE_NAME = "vehicles"
 
 
+ROUTES_SCRAPE_INTERVAL = datetime.timedelta(hours=24)
+ROUTES_RETRY_INTERVAL = datetime.timedelta(hours=1)
+
+
 async def scraper_loop():
     last_time = "0"
     last_routes_scrape: datetime.datetime | None = None
+    last_routes_scrape_failed = False
     last_checkpoint: datetime.datetime | None = None
     async with aiohttp.ClientSession() as session:
         while True:
-            try:
-                now = datetime.datetime.now()
-                if (last_routes_scrape is None) or (
-                    (now - last_routes_scrape) >= datetime.timedelta(hours=24)
-                ):
-                    logger.info("Scraping routes...")
+            now = datetime.datetime.now()
+            routes_interval = (
+                ROUTES_RETRY_INTERVAL if last_routes_scrape_failed else ROUTES_SCRAPE_INTERVAL
+            )
+            if (last_routes_scrape is None) or (
+                (now - last_routes_scrape) >= routes_interval
+            ):
+                logger.info("Scraping routes...")
+                try:
                     await scrape_routes(session)
-                    last_routes_scrape = now
-            except Exception as exc:
-                logger.error(f"Route scrape failed: {exc}")
+                    last_routes_scrape_failed = False
+                except Exception as exc:
+                    logger.error(f"Route scrape failed: {exc}")
+                    last_routes_scrape_failed = True
+                last_routes_scrape = now
             try:
                 now = datetime.datetime.now()
                 if (last_checkpoint is None) or (
@@ -106,7 +116,11 @@ async def scrape_routes(session: aiohttp.ClientSession | None = None):
                 for name in files:
                     table_name = f"ttc_{name.split('.')[0]}"
                     with zip_data.open(name, mode="r") as obj:
-                        df = pl.read_csv(obj)
+                        # GTFS ID columns (trip_id, shape_id, ...) are opaque strings per spec,
+                        # but often look numeric in early rows, so partial-sample schema
+                        # inference guesses i64 and then throws on a later non-numeric value
+                        # (e.g. "t_fb3_sb_9"). Scan the whole column before inferring dtype.
+                        df = pl.read_csv(obj, infer_schema_length=None)
                     logger.info(f"Writing {len(df)} rows to table {table_name}")
                     conn.register("_df", df)
                     conn.execute(
